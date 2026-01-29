@@ -1,5 +1,6 @@
 import { supabase }  from '@/lib/supabase';
-import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
+// ❌ Google Auth temporairement désactivé
+// import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
 import { SignInWithApple } from '@capacitor-community/apple-sign-in';
 import { Capacitor } from '@capacitor/core';
 
@@ -12,14 +13,14 @@ export interface AuthResponse {
 
 class AuthService {
   constructor() {
-    // Initialiser Google Auth au démarrage
-    if (Capacitor.isNativePlatform()) {
-      GoogleAuth.initialize({
-        clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-        scopes: ['profile', 'email'],
-        grantOfflineAccess: true,
-      });
-    }
+    // ❌ Google Auth init désactivé temporairement
+    // if (Capacitor.isNativePlatform()) {
+    //   GoogleAuth.initialize({
+    //     clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+    //     scopes: ['profile', 'email'],
+    //     grantOfflineAccess: true,
+    //   });
+    // }
   }
 
   // ===== CONNEXION EMAIL/PASSWORD =====
@@ -68,47 +69,53 @@ class AuthService {
     }
   }
 
-  // ===== CONNEXION GOOGLE =====
+  // ===== CONNEXION GOOGLE (DÉSACTIVÉ TEMPORAIREMENT) =====
   async loginWithGoogle(): Promise<AuthResponse> {
-    try {
-      if (!Capacitor.isNativePlatform()) {
-        // Web: utiliser OAuth flow de Supabase
-        const { error } = await supabase.auth.signInWithOAuth({
-          provider: 'google',
-          options: {
-            redirectTo: window.location.origin,
-          }
-        });
+    return { 
+      success: false, 
+      error: 'Connexion Google temporairement indisponible. Utilisez Apple Sign-In ou Email/Password.' 
+    };
+    
+    // ❌ Code Google Auth commenté
+    // try {
+    //   if (!Capacitor.isNativePlatform()) {
+    //     // Web: utiliser OAuth flow de Supabase
+    //     const { error } = await supabase.auth.signInWithOAuth({
+    //       provider: 'google',
+    //       options: {
+    //         redirectTo: window.location.origin,
+    //       }
+    //     });
 
-        if (error) {
-          return { success: false, error: this.translateError(error.message) };
-        }
+    //     if (error) {
+    //       return { success: false, error: this.translateError(error.message) };
+    //     }
 
-        return { success: true };
-      }
+    //     return { success: true };
+    //   }
 
-      // Mobile: utiliser le plugin Capacitor
-      const googleUser = await GoogleAuth.signIn();
+    //   // Mobile: utiliser le plugin Capacitor
+    //   const googleUser = await GoogleAuth.signIn();
 
-      if (!googleUser) {
-        return { success: false, error: 'Connexion Google annulée' };
-      }
+    //   if (!googleUser) {
+    //     return { success: false, error: 'Connexion Google annulée' };
+    //   }
 
-      // Authentifier avec Supabase en utilisant le token Google
-      const { data, error } = await supabase.auth.signInWithIdToken({
-        provider: 'google',
-        token: googleUser.authentication.idToken,
-      });
+    //   // Authentifier avec Supabase en utilisant le token Google
+    //   const { data, error } = await supabase.auth.signInWithIdToken({
+    //     provider: 'google',
+    //     token: googleUser.authentication.idToken,
+    //   });
 
-      if (error) {
-        return { success: false, error: this.translateError(error.message) };
-      }
+    //   if (error) {
+    //     return { success: false, error: this.translateError(error.message) };
+    //   }
 
-      return { success: true, user: data.user, session: data.session };
-    } catch (error: any) {
-      console.error('Google Auth Error:', error);
-      return { success: false, error: error.message };
-    }
+    //   return { success: true, user: data.user, session: data.session };
+    // } catch (error: any) {
+    //   console.error('Google Auth Error:', error);
+    //   return { success: false, error: error.message };
+    // }
   }
 
   // ===== CONNEXION APPLE (iOS uniquement) =====
@@ -214,13 +221,14 @@ class AuthService {
   async logout(): Promise<void> {
     await supabase.auth.signOut();
     
-    if (Capacitor.isNativePlatform()) {
-      try {
-        await GoogleAuth.signOut();
-      } catch (e) {
-        console.log('Google sign out error:', e);
-      }
-    }
+    // ❌ Google Sign Out désactivé
+    // if (Capacitor.isNativePlatform()) {
+    //   try {
+    //     await GoogleAuth.signOut();
+    //   } catch (e) {
+    //     console.log('Google sign out error:', e);
+    //   }
+    // }
   }
 
   // ===== ÉCOUTER LES CHANGEMENTS D'AUTHENTIFICATION =====
