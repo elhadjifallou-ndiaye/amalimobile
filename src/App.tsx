@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ScreenType } from '@/types';
+import { ScreenType } from '@/types'; 
 import DiscoveryScreen from '@/components/DiscoveryScreen';
 import CommunityScreen from '@/components/CommunityScreen';
 import MessagesScreen from '@/components/MessagesScreen';
@@ -137,7 +137,7 @@ function AppContent() {
         <div className="relative">
           <ProfileCompletion onComplete={handleProfileComplete} />
           
-          {import.meta.env.DEV && (
+        {import.meta.env.DEV && (
             <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
               <button
                 onClick={() => {

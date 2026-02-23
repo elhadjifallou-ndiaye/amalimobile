@@ -1,55 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Crown, Sparkles, Star, Check, Eye, RotateCcw, TrendingUp, Video, Shield } from 'lucide-react';
-import { InAppPurchase2, IAPProduct } from '@awesome-cordova-plugins/in-app-purchase-2';
-import { supabase, authService } from '@/lib/supabase';
-import { initIAP } from '../iap';
-import { Capacitor } from '@capacitor/core';
+import React from 'react';
+import { ArrowLeft, Crown, Sparkles, Star, Eye, RotateCcw, TrendingUp, Video, Shield, Clock } from 'lucide-react';
 
 interface PremiumScreenProps {
   onClose: () => void;
 }
 
 export default function PremiumScreen({ onClose }: PremiumScreenProps) {
-  const [selectedPlan, setSelectedPlan] = useState<string | null>('amalielitev2');
-  const [loading, setLoading] = useState(false);
-  const [products, setProducts] = useState<{ [key: string]: IAPProduct }>({});
-  const [iapAvailable, setIapAvailable] = useState(false);
-
-  useEffect(() => {
-    const isNativePlatform = Capacitor.isNativePlatform();
-    
-    if (isNativePlatform) {
-      try {
-        initIAP();
-        setIapAvailable(true);
-
-        const checkProducts = () => {
-          try {
-            const essentiel = InAppPurchase2.get('amaliessentielv2');
-            const elite = InAppPurchase2.get('amalielitev2');
-            const prestige = InAppPurchase2.get('amaliprestigev2');
-            const prestigeFemme = InAppPurchase2.get('amaliprestigefemmev2');
-
-            setProducts({
-              'amaliessentielv2': essentiel,
-              'amalielitev2': elite,
-              'amaliprestigev2': prestige,
-              'amaliprestigefemmev2': prestigeFemme,
-            });
-          } catch (error) {
-            // Erreur silencieuse - les produits ne sont pas encore disponibles
-          }
-        };
-
-        setTimeout(checkProducts, 1000);
-      } catch (error) {
-        setIapAvailable(false);
-      }
-    } else {
-      setIapAvailable(false);
-    }
-  }, []);
-
   const plans = [
     {
       id: 'amaliessentielv2',
@@ -61,11 +17,9 @@ export default function PremiumScreen({ onClose }: PremiumScreenProps) {
       bgColor: 'bg-amber-50',
       icon: Star,
       features: [
-        { text: '80 likes par jour', included: true },
-        { text: '5 super likes par jour', included: true },
-        { text: 'Voir qui vous a aimé', included: false },
-        { text: 'Annuler un swipe', included: false },
-        { text: 'Visibilité accrue', included: false },
+        '80 likes par jour',
+        '5 super likes par jour',
+        'Profil mis en avant',
       ],
     },
     {
@@ -79,12 +33,11 @@ export default function PremiumScreen({ onClose }: PremiumScreenProps) {
       icon: Crown,
       popular: true,
       features: [
-        { text: '100 likes par jour', included: true },
-        { text: '7 super likes par jour', included: true },
-        { text: 'Voir qui vous a aimé', included: true },
-        { text: 'Annuler un swipe', included: true },
-        { text: 'Visibilité accrue', included: true },
-        { text: 'Appels vidéo', included: false },
+        '100 likes par jour',
+        '7 super likes par jour',
+        'Voir qui vous a aimé',
+        'Annuler un swipe',
+        'Visibilité accrue',
       ],
     },
     {
@@ -97,13 +50,13 @@ export default function PremiumScreen({ onClose }: PremiumScreenProps) {
       bgColor: 'bg-slate-50',
       icon: Sparkles,
       features: [
-        { text: 'Likes illimités', included: true },
-        { text: '20 super likes par jour', included: true },
-        { text: 'Appels vidéo', included: true },
-        { text: 'Voir qui vous a aimé', included: true },
-        { text: 'Annuler un swipe', included: true },
-        { text: 'Visibilité maximale', included: true },
-        { text: 'Statistiques de popularité', included: true },
+        'Likes illimités',
+        '20 super likes par jour',
+        'Appels vidéo',
+        'Voir qui vous a aimé',
+        'Annuler un swipe',
+        'Visibilité maximale',
+        'Statistiques de popularité',
       ],
     },
     {
@@ -118,102 +71,15 @@ export default function PremiumScreen({ onClose }: PremiumScreenProps) {
       forWomenOnly: true,
       special: 'Offre spéciale femmes',
       features: [
-        { text: 'Likes illimités', included: true },
-        { text: '30 super likes par jour', included: true },
-        { text: 'Voir qui vous a aimé', included: true },
-        { text: 'Annuler un match', included: true },
-        { text: 'Priorité modérée', included: true },
-        { text: 'Sécurité renforcée', included: true },
+        'Likes illimités',
+        '30 super likes par jour',
+        'Voir qui vous a aimé',
+        'Annuler un match',
+        'Priorité modérée',
+        'Sécurité renforcée',
       ],
     },
   ];
-
-  const updatePremiumStatus = async (planId: string) => {
-    try {
-      const { user } = await authService.getCurrentUser();
-      if (!user) return;
-
-      const planType = planId.includes('essentiel') ? 'essentiel' 
-        : planId.includes('femme') ? 'prestige-femme'
-        : planId.includes('elite') ? 'elite'
-        : 'prestige';
-
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          is_premium: true,
-          premium_tier: planType,
-          premium_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', user.id);
-
-      if (error) throw error;
-    } catch (error) {
-      throw error;
-    }
-  };
-
-  const handleSubscribe = (planId: string | null) => {
-    if (!planId || loading) return;
-
-    if (!iapAvailable) {
-      alert('⚠️ Paiements non configurés\n\nLes paiements in-app ne sont pas encore configurés sur Google Play Console et App Store Connect.\n\nCette fonctionnalité sera disponible après la configuration.');
-      return;
-    }
-
-    const product = products[planId];
-    if (!product) {
-      alert('Produit non disponible. Veuillez réessayer.');
-      return;
-    }
-
-    if (!product.canPurchase) {
-      alert('Ce produit ne peut pas être acheté pour le moment.');
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      InAppPurchase2.when(planId).approved(async (p: IAPProduct) => {
-        try {
-          await updatePremiumStatus(p.id);
-          p.finish();
-          setLoading(false);
-          alert('🎉 Abonnement activé avec succès !');
-          onClose();
-        } catch (error) {
-          setLoading(false);
-          alert('Erreur lors de l\'activation de l\'abonnement. Contactez le support.');
-        }
-      });
-
-      InAppPurchase2.when(planId).error((err: any) => {
-        setLoading(false);
-        
-        let errorMessage = 'Erreur lors de l\'achat';
-        if (err.code === 'E_USER_CANCELLED') {
-          errorMessage = 'Achat annulé';
-        } else if (err.code === 'E_NETWORK_ERROR') {
-          errorMessage = 'Erreur réseau. Vérifiez votre connexion.';
-        } else if (err.message) {
-          errorMessage = err.message;
-        }
-        
-        alert(errorMessage);
-      });
-
-      InAppPurchase2.when(planId).cancelled(() => {
-        setLoading(false);
-      });
-
-      InAppPurchase2.order(planId);
-    } catch (error: any) {
-      setLoading(false);
-      alert('Erreur lors du traitement du paiement');
-    }
-  };
 
   return (
     <div className="fixed inset-0 bg-gradient-to-b from-slate-50 to-white dark:from-slate-900 dark:to-slate-800 flex flex-col">
@@ -236,55 +102,55 @@ export default function PremiumScreen({ onClose }: PremiumScreenProps) {
           </div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Améliorez votre expérience</h2>
           <p className="text-slate-600 dark:text-slate-400">
-            Choisissez le plan qui vous convient et trouvez votre match idéal plus rapidement
+            Découvrez nos offres Premium pour trouver votre match idéal plus rapidement
           </p>
         </div>
 
-        {/* Message si IAP non disponible */}
-        {!iapAvailable && (
-          <div className="bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-200 dark:border-amber-800 rounded-2xl p-4 mb-6">
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 bg-amber-500 rounded-full flex items-center justify-center flex-shrink-0">
-                <span className="text-white text-lg">⚠️</span>
-              </div>
-              <div>
-                <h3 className="font-semibold text-amber-900 dark:text-amber-300 mb-1">
-                  Paiements en configuration
-                </h3>
-                <p className="text-sm text-amber-700 dark:text-amber-400">
-                  Les paiements in-app seront disponibles après configuration sur Google Play Console et App Store Connect.
-                </p>
-              </div>
+        {/* Message Coming Soon */}
+        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-2 border-blue-200 dark:border-blue-800 rounded-3xl p-6 mb-8 shadow-sm">
+          <div className="flex flex-col items-center text-center">
+            <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mb-4">
+              <Clock className="w-8 h-8 text-white" />
+            </div>
+            <h3 className="text-xl font-bold text-blue-900 dark:text-blue-300 mb-2">
+              Bientôt disponible ! 🎉
+            </h3>
+            <p className="text-blue-700 dark:text-blue-400 mb-4">
+              Les abonnements Premium seront disponibles très prochainement. En attendant, profitez gratuitement de toutes les fonctionnalités de base !
+            </p>
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-full text-sm font-medium">
+              <Sparkles className="w-4 h-4" />
+              <span>Lancement imminent</span>
             </div>
           </div>
-        )}
-
-        {/* Avantages Premium */}
-        <div className="grid grid-cols-2 gap-3 mb-8">
-          <BenefitCard icon={Eye} text="Voir qui vous aime" />
-          <BenefitCard icon={RotateCcw} text="Annuler un swipe" />
-          <BenefitCard icon={TrendingUp} text="Profil mis en avant" />
-          <BenefitCard icon={Video} text="Appels vidéo" />
         </div>
 
-        {/* Plans d'abonnement */}
-        <div className="space-y-4 mb-8">
-          {plans.map((plan) => {
-            const Icon = plan.icon;
-            const isSelected = selectedPlan === plan.id;
-            const product = products[plan.id];
+        {/* Avantages Premium à venir */}
+        <div className="mb-6">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 text-center">
+            Ce qui vous attend avec Premium
+          </h3>
+          <div className="grid grid-cols-2 gap-3 mb-8">
+            <BenefitCard icon={Eye} text="Voir qui vous aime" />
+            <BenefitCard icon={RotateCcw} text="Annuler un swipe" />
+            <BenefitCard icon={TrendingUp} text="Profil mis en avant" />
+            <BenefitCard icon={Video} text="Appels vidéo" />
+          </div>
+        </div>
 
-            return (
-              <button
-                key={plan.id}
-                onClick={() => setSelectedPlan(plan.id)}
-                disabled={loading}
-                className={`w-full text-left transition-all ${isSelected ? 'scale-[1.02]' : 'hover:scale-[1.01]'} ${loading ? 'opacity-50' : ''}`}
-              >
+        {/* Plans d'abonnement (preview) */}
+        <div className="mb-6">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 text-center">
+            Nos formules Premium
+          </h3>
+          <div className="space-y-4 mb-8 opacity-60">
+            {plans.map((plan) => {
+              const Icon = plan.icon;
+
+              return (
                 <div
-                  className={`relative bg-white dark:bg-slate-800 rounded-2xl border-2 ${
-                    isSelected ? plan.borderColor : 'border-slate-200 dark:border-slate-700'
-                  } p-5 shadow-sm hover:shadow-md transition-all overflow-hidden`}
+                  key={plan.id}
+                  className="relative bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-200 dark:border-slate-700 p-5 shadow-sm overflow-hidden"
                 >
                   {plan.popular && (
                     <div className="absolute top-0 right-0 px-3 py-1 bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-xs font-semibold rounded-bl-xl rounded-tr-xl">
@@ -309,39 +175,29 @@ export default function PremiumScreen({ onClose }: PremiumScreenProps) {
                       <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">{plan.name}</h3>
                       <div className="flex items-baseline gap-1">
                         <span className="text-3xl font-bold text-slate-900 dark:text-white">
-                          {product?.price || `${plan.price} FCFA`}
+                          {plan.price} FCFA
                         </span>
                         <span className="text-slate-600 dark:text-slate-400">
                           / {plan.period}
                         </span>
                       </div>
                     </div>
-
-                    {isSelected && (
-                      <div className="w-6 h-6 bg-rose-600 rounded-full flex items-center justify-center">
-                        <Check className="w-4 h-4 text-white" />
-                      </div>
-                    )}
                   </div>
 
                   <div className="space-y-2">
                     {plan.features.map((feature, index) => (
                       <div key={index} className="flex items-center gap-2">
-                        {feature.included ? (
-                          <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                        ) : (
-                          <div className="w-4 h-4 border-2 border-slate-300 dark:border-slate-600 rounded-full flex-shrink-0" />
-                        )}
-                        <span className={`text-sm ${feature.included ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400 dark:text-slate-500'}`}>
-                          {feature.text}
+                        <div className={`w-2 h-2 rounded-full bg-gradient-to-r ${plan.color} flex-shrink-0`} />
+                        <span className="text-sm text-slate-700 dark:text-slate-300">
+                          {feature}
                         </span>
                       </div>
                     ))}
                   </div>
                 </div>
-              </button>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
 
         {/* Mode Halal */}
@@ -357,29 +213,20 @@ export default function PremiumScreen({ onClose }: PremiumScreenProps) {
           </div>
         </div>
 
-        {/* Bouton Souscrire */}
+        {/* CTA pour être notifié */}
         <div className="pb-32">
           <button
-            disabled={!selectedPlan || loading}
-            onClick={() => handleSubscribe(selectedPlan)}
-            className="w-full py-4 bg-gradient-to-r from-rose-500 to-amber-600 text-white rounded-xl font-semibold hover:from-rose-600 hover:to-amber-700 transition-all shadow-lg hover:shadow-xl active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            onClick={() => alert('Merci de votre intérêt ! Nous vous notifierons dès que Premium sera disponible. 🎉')}
+            className="w-full py-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-2xl font-semibold hover:from-blue-600 hover:to-indigo-700 transition-all shadow-lg hover:shadow-xl active:scale-98 flex items-center justify-center gap-2"
           >
-            {loading ? (
-              <>
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Traitement...</span>
-              </>
-            ) : selectedPlan ? (
-              `Souscrire à ${plans.find((p) => p.id === selectedPlan)?.name}`
-            ) : (
-              'Choisissez un plan'
-            )}
+            <Bell className="w-5 h-5" />
+            <span>Me notifier du lancement</span>
           </button>
 
           <p className="text-center text-xs text-slate-500 dark:text-slate-400 mt-4">
-            Paiement sécurisé via {Capacitor.getPlatform() === 'ios' ? 'App Store' : 'Google Play'}
+            Soyez parmi les premiers à profiter de nos offres Premium
             <br />
-            <span className="text-emerald-600 dark:text-emerald-400 font-medium">✓ Annulation possible à tout moment</span>
+            <span className="text-blue-600 dark:text-blue-400 font-medium">✨ Offres de lancement à venir</span>
           </p>
         </div>
       </div>
@@ -402,3 +249,6 @@ function BenefitCard({ icon: Icon, text }: BenefitCardProps) {
     </div>
   );
 }
+
+// Ajout de l'import manquant
+import { Bell } from 'lucide-react';

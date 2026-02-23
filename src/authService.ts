@@ -1,8 +1,9 @@
 import { supabase }  from '@/lib/supabase';
 // ❌ Google Auth temporairement désactivé
 // import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
-import { SignInWithApple } from '@capacitor-community/apple-sign-in';
-import { Capacitor } from '@capacitor/core';
+// ❌ Apple Auth temporairement désactivé
+// import { SignInWithApple } from '@capacitor-community/apple-sign-in';
+//import { Capacitor } from '@capacitor/core';
 
 export interface AuthResponse {
   success: boolean;
@@ -73,7 +74,7 @@ class AuthService {
   async loginWithGoogle(): Promise<AuthResponse> {
     return { 
       success: false, 
-      error: 'Connexion Google temporairement indisponible. Utilisez Apple Sign-In ou Email/Password.' 
+      error: 'Connexion Google temporairement indisponible. Utilisez Email/Password.' 
     };
     
     // ❌ Code Google Auth commenté
@@ -118,36 +119,62 @@ class AuthService {
     // }
   }
 
-  // ===== CONNEXION APPLE (iOS uniquement) =====
+  // ===== CONNEXION APPLE (DÉSACTIVÉ TEMPORAIREMENT) =====
   async loginWithApple(): Promise<AuthResponse> {
-    try {
-      if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'ios') {
-        return { success: false, error: 'Apple Sign-In disponible uniquement sur iOS' };
-      }
+    return { 
+      success: false, 
+      error: 'Connexion Apple temporairement indisponible. Utilisez Email/Password.' 
+    };
+    
+    // ❌ Code Apple Auth commenté temporairement
+    // try {
+    //   if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'ios') {
+    //     return { success: false, error: 'Apple Sign-In disponible uniquement sur iOS' };
+    //   }
 
-      const result = await SignInWithApple.authorize({
-        clientId: 'com.amali.app',
-        redirectURI: `https://${import.meta.env.VITE_SUPABASE_URL?.replace('https://', '')}/auth/v1/callback`,
-        scopes: 'email name',
-        state: Math.random().toString(36).substring(7),
-        nonce: Math.random().toString(36).substring(7),
-      });
+    //   // Générer un nonce aléatoire
+    //   const rawNonce = this.generateNonce(32);
+    //   
+    //   // Hasher le nonce en SHA-256
+    //   const hashedNonce = await this.sha256(rawNonce);
 
-      // Authentifier avec Supabase
-      const { data, error } = await supabase.auth.signInWithIdToken({
-        provider: 'apple',
-        token: result.response.identityToken,
-      });
+    //   console.log('Apple Sign-In: Starting with nonce');
 
-      if (error) {
-        return { success: false, error: this.translateError(error.message) };
-      }
+    //   const result = await SignInWithApple.authorize({
+    //     clientId: 'com.amali.love',  // ⚠️ Votre Bundle ID exact
+    //     redirectURI: 'https://coytzhvhksalobmdnzwr.supabase.co/auth/v1/callback',
+    //     scopes: 'email name',
+    //     state: rawNonce,
+    //     nonce: hashedNonce,  // Nonce hashé pour Apple
+    //   });
 
-      return { success: true, user: data.user, session: data.session };
-    } catch (error: any) {
-      console.error('Apple Auth Error:', error);
-      return { success: false, error: error.message };
-    }
+    //   console.log('Apple Sign-In: Got response from Apple');
+
+    //   if (!result.response.identityToken) {
+    //     return { success: false, error: 'Pas de token reçu d\'Apple' };
+    //   }
+
+    //   // Authentifier avec Supabase en utilisant le nonce RAW (non-hashé)
+    //   const { data, error } = await supabase.auth.signInWithIdToken({
+    //     provider: 'apple',
+    //     token: result.response.identityToken,
+    //     nonce: rawNonce,  // ⚠️ Important : le nonce ORIGINAL (pas hashé)
+    //   });
+
+    //   if (error) {
+    //     console.error('Supabase Apple Auth Error:', error);
+    //     return { success: false, error: this.translateError(error.message) };
+    //   }
+
+    //   console.log('Apple Sign-In: Success!');
+    //   return { success: true, user: data.user, session: data.session };
+    // } catch (error: any) {
+    //   console.error('Apple Auth Error:', error);
+    //   return { 
+    //     success: false, 
+    //     error: error.message || 'Erreur lors de la connexion Apple. Veuillez réessayer.' 
+    //   };
+    // }
   }
 
   // ===== CONNEXION PAR TÉLÉPHONE - ÉTAPE 1: ENVOYER CODE =====
@@ -235,6 +262,30 @@ class AuthService {
   onAuthStateChange(callback: (event: string, session: any) => void) {
     return supabase.auth.onAuthStateChange(callback);
   }
+
+  // ===== GÉNÉRER UN NONCE ALÉATOIRE (pour Apple Sign-In) =====
+  // private generateNonce(length: number = 32): string {
+  //   const charset = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._';
+  //   let result = '';
+  //   const randomValues = new Uint8Array(length);
+  //   crypto.getRandomValues(randomValues);
+  //   
+  //   randomValues.forEach((value) => {
+  //     result += charset[value % charset.length];
+  //   });
+  //   
+  //   return result;
+  // }
+
+  // ===== HASHER EN SHA-256 (pour Apple Sign-In) =====
+  // private async sha256(plain: string): Promise<string> {
+  //   const encoder = new TextEncoder();
+  //   const data = encoder.encode(plain);
+  //   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  //   const hashArray = Array.from(new Uint8Array(hashBuffer));
+  //   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  //   return hashHex;
+  // }
 
   // ===== TRADUCTION DES ERREURS =====
   private translateError(error: string): string {
