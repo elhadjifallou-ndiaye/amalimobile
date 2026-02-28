@@ -455,7 +455,7 @@ export default function ProfileScreen() {
           <MenuItem 
             icon={HelpCircle} 
             label="Aide & Support" 
-            onClick={() => alert('Contactez-nous à support@amali.app')} 
+            onClick={() => alert('Contactez-nous à fallound1000@gmail.com')} 
           />
           <MenuItem 
             icon={Home} 
