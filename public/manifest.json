@@ -1,0 +1,28 @@
+{
+  "name": "AMALI - Rencontres Halal",
+  "short_name": "AMALI",
+  "description": "L'application de rencontre halal pour la communauté musulmane du Sénégal",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F5F0E8",
+  "theme_color": "#C85A34",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/assets/logoamali.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/logoamali.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["social", "lifestyle"],
+  "lang": "fr-SN",
+  "dir": "ltr"
+}
