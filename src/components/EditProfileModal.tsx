@@ -1,6 +1,29 @@
 import { useState, useEffect } from 'react';
-import { X, Trash2, Star, Upload, Save, Loader2 } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { X, Trash2, Star, Upload, Save, Loader2, MapPin, User } from 'lucide-react';
 import { supabase, AuthUser } from '@/lib/supabase';
+
+const compressImage = (file: File): Promise<Blob> =>
+  new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const MAX_DIM = 1920;
+      let { width, height } = img;
+      if (width > MAX_DIM || height > MAX_DIM) {
+        if (width > height) { height = Math.round(height * MAX_DIM / width); width = MAX_DIM; }
+        else { width = Math.round(width * MAX_DIM / height); height = MAX_DIM; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Compression échouée')), 'image/jpeg', 0.85);
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Image invalide')); };
+    img.src = objectUrl;
+  });
 
 interface EditProfileModalProps {
   user: AuthUser;
@@ -17,7 +40,28 @@ interface ProfilePhoto {
 
 export default function EditProfileModal({ user, onClose, onSave }: EditProfileModalProps) {
   const [loading, setLoading] = useState(false);
-  const [uploadingPhoto] = useState(false);
+  const [gpsLoading, setGpsLoading] = useState(false);
+
+  const detectLocation = () => {
+    if (!navigator.geolocation) return;
+    setGpsLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude, longitude } = pos.coords;
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&accept-language=fr`);
+          const data = await res.json();
+          const city = data.address?.city || data.address?.town || data.address?.village || data.address?.county || '';
+          const country = data.address?.country || '';
+          const locationText = [city, country].filter(Boolean).join(', ');
+          if (locationText) setFormData(prev => ({ ...prev, location: locationText }));
+        } catch { /* ignore */ }
+        setGpsLoading(false);
+      },
+      () => setGpsLoading(false),
+      { timeout: 8000 }
+    );
+  };
   const [formData, setFormData] = useState({
     name: '',
     bio: '',
@@ -83,9 +127,9 @@ export default function EditProfileModal({ user, onClose, onSave }: EditProfileM
         return;
       }
 
-      // Vérifier la taille (5MB max)
-      if (file.size > 5 * 1024 * 1024) {
-        alert('La taille de l\'image ne doit pas dépasser 5 MB');
+      // Vérifier la taille (20MB max avant compression)
+      if (file.size > 20 * 1024 * 1024) {
+        alert('La taille de l\'image ne doit pas dépasser 20 MB');
         return;
       }
 
@@ -97,8 +141,12 @@ export default function EditProfileModal({ user, onClose, onSave }: EditProfileM
 
   // Supprimer une photo
   const handleDeletePhoto = (index: number) => {
+    if (photos.length <= 1) {
+      alert('Vous devez conserver au moins une photo de profil.');
+      return;
+    }
     const photo = photos[index];
-    
+
     // Si c'est une photo existante (pas nouvelle), l'ajouter à la liste de suppression
     if (!photo.isNew && photo.url) {
       setPhotosToDelete(prev => [...prev, photo.url]);
@@ -132,12 +180,13 @@ export default function EditProfileModal({ user, onClose, onSave }: EditProfileM
 
     for (const photo of photos) {
       if (photo.isNew && photo.file) {
-        const fileExt = photo.file.name.split('.').pop();
-        const fileName = `${user.id}/photo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+        const compressed = await compressImage(photo.file);
+        const fileName = `${user.id}/photo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
 
         const { error: uploadError } = await supabase.storage
           .from('profile-photos')
-          .upload(fileName, photo.file, {
+          .upload(fileName, compressed, {
+            contentType: 'image/jpeg',
             cacheControl: '3600',
             upsert: false,
           });
@@ -178,7 +227,11 @@ export default function EditProfileModal({ user, onClose, onSave }: EditProfileM
 
   const handleSave = async () => {
     if (!formData.name.trim()) {
-      alert('Le nom est obligatoire');
+      alert('Le prénom est obligatoire');
+      return;
+    }
+    if (photos.length === 0) {
+      alert('Vous devez avoir au moins une photo de profil.');
       return;
     }
 
@@ -236,20 +289,23 @@ export default function EditProfileModal({ user, onClose, onSave }: EditProfileM
     }
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-slate-200 p-6 flex items-center justify-between rounded-t-3xl">
-          <h2 className="text-2xl font-bold text-slate-900">Modifier mon profil</h2>
+  return createPortal(
+    <div className="fixed inset-0 bg-white dark:bg-slate-900 z-[9999] flex flex-col">
+      {/* Header */}
+      <div
+        className="flex-shrink-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 px-5 flex items-center justify-between"
+        style={{ paddingTop: 'max(env(safe-area-inset-top), 16px)', paddingBottom: '1rem' }}
+      >
+          <h2 className="text-xl font-bold text-slate-900 dark:text-white">Modifier mon profil</h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-slate-100 rounded-full transition-colors"
+            className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
-            <X className="w-6 h-6 text-slate-600" />
+            <X className="w-5 h-5 text-slate-600 dark:text-slate-400" />
           </button>
-        </div>
+      </div>
 
+      <div className="flex-1 overflow-y-auto">
         <div className="p-6 space-y-6">
           {/* Section Photos */}
           <div>
@@ -269,8 +325,25 @@ export default function EditProfileModal({ user, onClose, onSave }: EditProfileM
                   <img
                     src={photo.url}
                     alt={`Photo ${index + 1}`}
-                    className="w-full h-full object-cover rounded-2xl"
+                    className="w-full h-full object-cover rounded-2xl bg-slate-100"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                      const placeholder = e.currentTarget.nextElementSibling as HTMLElement;
+                      if (placeholder) placeholder.style.display = 'flex';
+                    }}
                   />
+                  <div
+                    className="w-full h-full rounded-2xl bg-slate-100 items-center justify-center flex-col gap-1 hidden absolute inset-0"
+                  >
+                    <User className="w-8 h-8 text-slate-300" />
+                    <span className="text-xs text-slate-400">Photo invalide</span>
+                    <button
+                      onClick={() => handleDeletePhoto(index)}
+                      className="mt-1 text-xs text-red-400 underline"
+                    >
+                      Supprimer
+                    </button>
+                  </div>
                   
                   {/* Badge photo principale */}
                   {mainPhotoIndex === index && (
@@ -315,7 +388,7 @@ export default function EditProfileModal({ user, onClose, onSave }: EditProfileM
                     multiple
                     onChange={handleAddPhoto}
                     className="hidden"
-                    disabled={uploadingPhoto}
+                    disabled={loading}
                   />
                 </label>
               )}
@@ -361,13 +434,24 @@ export default function EditProfileModal({ user, onClose, onSave }: EditProfileM
               <label className="block text-sm font-medium text-slate-700 mb-2">
                 Localisation
               </label>
-              <input
-                type="text"
-                value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                className="w-full px-4 py-3 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-rose-500 focus:border-transparent"
-                placeholder="Ville, Pays"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={formData.location}
+                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                  className="flex-1 px-4 py-3 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-rose-500 focus:border-transparent"
+                  placeholder="Ville, Pays"
+                />
+                <button
+                  type="button"
+                  onClick={detectLocation}
+                  disabled={gpsLoading}
+                  className="px-3 border border-slate-300 rounded-2xl bg-white text-slate-600 hover:bg-slate-50 transition-colors"
+                  title="Détecter ma position"
+                >
+                  {gpsLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <MapPin className="w-5 h-5" />}
+                </button>
+              </div>
             </div>
 
             {/* Bio */}
@@ -389,12 +473,16 @@ export default function EditProfileModal({ user, onClose, onSave }: EditProfileM
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Footer avec boutons */}
-        <div className="sticky bottom-0 bg-white border-t border-slate-200 p-6 flex gap-3 rounded-b-3xl">
+      {/* Footer fixe — toujours visible au-dessus de la bottom nav */}
+      <div
+        className="flex-shrink-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 px-5 flex gap-3"
+        style={{ paddingTop: '1rem', paddingBottom: 'max(env(safe-area-inset-bottom), 1rem)' }}
+      >
           <button
             onClick={onClose}
-            className="flex-1 px-6 py-3 border border-slate-300 rounded-2xl text-slate-700 font-semibold hover:bg-slate-50 transition-colors"
+            className="flex-1 px-6 py-3 border border-slate-300 dark:border-slate-600 rounded-2xl text-slate-700 dark:text-slate-300 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
             disabled={loading}
           >
             Annuler
@@ -416,8 +504,8 @@ export default function EditProfileModal({ user, onClose, onSave }: EditProfileM
               </>
             )}
           </button>
-        </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

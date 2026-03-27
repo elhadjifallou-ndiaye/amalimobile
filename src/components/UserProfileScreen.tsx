@@ -22,7 +22,6 @@ interface UserProfile {
   prayer_frequency: string;
   interests: string[];
   relationship_goal: string;
-  halal_mode: boolean;
 }
 
 export default function UserProfileScreen({ userId, onClose }: UserProfileScreenProps) {
@@ -102,7 +101,10 @@ export default function UserProfileScreen({ userId, onClose }: UserProfileScreen
   return (
     <div className="flex flex-col h-screen bg-white dark:bg-slate-900">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 py-3">
+      <div
+        className="sticky top-0 z-10 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4"
+        style={{ paddingTop: 'max(env(safe-area-inset-top), 12px)', paddingBottom: '12px' }}
+      >
         <button
           onClick={onClose}
           className="w-10 h-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center transition-colors"
@@ -112,7 +114,7 @@ export default function UserProfileScreen({ userId, onClose }: UserProfileScreen
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto pb-20">
         {/* Photos Section */}
         {photos.length > 0 && (
           <div className="relative w-full aspect-[3/4] bg-slate-100 dark:bg-slate-800">
@@ -120,7 +122,6 @@ export default function UserProfileScreen({ userId, onClose }: UserProfileScreen
               src={photos[currentPhotoIndex]}
               alt={profile.name}
               className="w-full h-full object-cover"
-              style={{ filter: profile.halal_mode ? 'blur(10px)' : 'none' }}
             />
 
             {/* Photo Navigation */}

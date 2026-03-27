@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, MapPin, Users, Heart, Calendar, Sparkles, Shield, Bell, Moon, Save, Loader2 } from 'lucide-react';
 import { supabase, authService } from '@/lib/supabase';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -16,11 +16,9 @@ export default function SettingsScreen({ onClose }: SettingsScreenProps) {
   const [saving, setSaving] = useState(false);
   const [userId, setUserId] = useState<string>('');
   
-  // Préférences générales
   const [halalMode, setHalalMode] = useState(true);
   const [notifications, setNotifications] = useState(true);
   
-  // Filtres de recherche
   const [ageRange, setAgeRange] = useState([22, 35]);
   const [distance, setDistance] = useState(50);
   const [gender, setGender] = useState('femme');
@@ -138,10 +136,13 @@ export default function SettingsScreen({ onClose }: SettingsScreenProps) {
   if (loading) {
     return (
       <div className="fixed inset-0 bg-slate-50 dark:bg-slate-900 flex flex-col">
-        <header className="flex-shrink-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-5 py-4">
+        <header
+          className="flex-shrink-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-5"
+          style={{ paddingTop: 'max(env(safe-area-inset-top), 12px)', paddingBottom: '1rem' }}
+        >
           <div className="flex items-center gap-4">
-            <button 
-              onClick={onClose} 
+            <button
+              onClick={onClose}
               className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
             >
               <ArrowLeft className="w-5 h-5 text-slate-600 dark:text-slate-300" />
@@ -163,10 +164,13 @@ export default function SettingsScreen({ onClose }: SettingsScreenProps) {
   return (
     <div className="fixed inset-0 bg-slate-50 dark:bg-slate-900 flex flex-col">
       {/* Header - Fixed */}
-      <header className="flex-shrink-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-5 py-4">
+      <header
+        className="flex-shrink-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-5"
+        style={{ paddingTop: 'max(env(safe-area-inset-top), 12px)', paddingBottom: '1rem' }}
+      >
         <div className="flex items-center gap-4">
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
           >
             <ArrowLeft className="w-5 h-5 text-slate-600 dark:text-slate-300" />
@@ -331,7 +335,7 @@ export default function SettingsScreen({ onClose }: SettingsScreenProps) {
           </div>
         </div>
 
-        {/* Boutons d'action */}
+        {/* Boutons d'action - PADDING AUGMENTÉ */}
         <div className="space-y-3 pb-32">
           <button 
             onClick={handleSave}

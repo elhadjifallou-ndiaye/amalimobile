@@ -54,7 +54,7 @@
 
   /* Utilitaire pour la bottom navigation avec safe area */
   .bottom-nav-safe {
-    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
   }
 
   /* Utilitaire pour le padding bottom avec safe area */
@@ -68,6 +68,36 @@
   }
 }
 
+/* ===== DARK MODE : NOIR PUR ===== */
+.dark .dark\:bg-slate-900,
+.dark .dark\:bg-slate-800,
+.dark .dark\:bg-slate-700 {
+  background-color: #000000 !important;
+}
+
+/* Gradients fond principal */
+.dark .dark\:from-slate-900 { --tw-gradient-from: #000000 !important; }
+.dark .dark\:from-slate-800 { --tw-gradient-from: #0a0a0a !important; }
+.dark .dark\:to-slate-800   { --tw-gradient-to: #000000 !important; }
+.dark .dark\:to-slate-900   { --tw-gradient-to: #000000 !important; }
+.dark .dark\:to-slate-700   { --tw-gradient-to: #111111 !important; }
+
+/* Cards / surfaces élevées */
+.dark .dark\:bg-slate-800\/50,
+.dark .dark\:bg-slate-800\/80,
+.dark .dark\:bg-slate-900\/50,
+.dark .dark\:bg-slate-900\/80 {
+  background-color: #0f0f0f !important;
+}
+
+/* Borders */
+.dark .dark\:border-slate-700,
+.dark .dark\:border-slate-800 {
+  border-color: #1f1f1f !important;
+}
+
+/* ================================= */
+
 /* Styles personnalisés pour l'app */
 .card-shadow {
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
@@ -79,26 +109,13 @@
 
 /* Animation de swipe */
 @keyframes swipeLeft {
-  to {
-    transform: translateX(-200%) rotate(-20deg);
-    opacity: 0;
-  }
+  to { transform: translateX(-200%) rotate(-20deg); opacity: 0; }
 }
-
 @keyframes swipeRight {
-  to {
-    transform: translateX(200%) rotate(20deg);
-    opacity: 0;
-  }
+  to { transform: translateX(200%) rotate(20deg); opacity: 0; }
 }
-
-.swipe-left {
-  animation: swipeLeft 0.3s ease-out forwards;
-}
-
-.swipe-right {
-  animation: swipeRight 0.3s ease-out forwards;
-}
+.swipe-left  { animation: swipeLeft  0.3s ease-out forwards; }
+.swipe-right { animation: swipeRight 0.3s ease-out forwards; }
 
 /* Scrollbar personnalisée */
 ::-webkit-scrollbar {

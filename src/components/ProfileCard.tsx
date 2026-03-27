@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { X, Heart, MapPin, Briefcase, GraduationCap, Ruler, Sparkles, Crown, Star } from 'lucide-react';
 
 interface Profile {
-  id: number;
+  id: string;
   name: string;
   age: number;
   location: string;
@@ -17,6 +17,7 @@ interface Profile {
   height: number;
   religion: string;
   premiumTier?: 'essentiel' | 'elite' | 'prestige' | 'prestige-femme';
+  gender?: string;
 }
 
 interface ProfileCardProps {
@@ -26,9 +27,13 @@ interface ProfileCardProps {
   isAnimating: boolean;
 }
 
+const AVATAR_MALE = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='600' viewBox='0 0 400 600'%3E%3Crect width='400' height='600' fill='%231e3a5f'/%3E%3Ccircle cx='200' cy='200' r='85' fill='%2394a3b8'/%3E%3Cellipse cx='200' cy='480' rx='150' ry='130' fill='%2394a3b8'/%3E%3Ccircle cx='200' cy='200' r='70' fill='%23cbd5e1'/%3E%3Cellipse cx='200' cy='460' rx='120' ry='110' fill='%23cbd5e1'/%3E%3C/svg%3E`;
+const AVATAR_FEMALE = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='600' viewBox='0 0 400 600'%3E%3Crect width='400' height='600' fill='%234a1942'/%3E%3Ccircle cx='200' cy='200' r='85' fill='%23f9a8d4'/%3E%3Cellipse cx='200' cy='500' rx='170' ry='140' fill='%23f9a8d4'/%3E%3Ccircle cx='200' cy='200' r='70' fill='%23fce7f3'/%3E%3Cellipse cx='200' cy='480' rx='140' ry='120' fill='%23fce7f3'/%3E%3C/svg%3E`;
+
 export default function ProfileCard({ profile, onLike, onPass, isAnimating }: ProfileCardProps) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isInfoVisible, setIsInfoVisible] = useState(false);
+  const [brokenImages, setBrokenImages] = useState<Set<number>>(new Set());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Détecter le scroll manuel pour mettre à jour l'icône
@@ -75,7 +80,7 @@ export default function ProfileCard({ profile, onLike, onPass, isAnimating }: Pr
   const tierStyling = getTierStyling();
 
   const nextImage = () => {
-    if (currentImageIndex < profile.image.length - 1) {
+    if (currentImageIndex < displayImages.length - 1) {
       setCurrentImageIndex(prev => prev + 1);
     }
   };
@@ -110,8 +115,11 @@ export default function ProfileCard({ profile, onLike, onPass, isAnimating }: Pr
     }
   };
 
+  const defaultAvatar = profile.gender === 'femme' ? AVATAR_FEMALE : AVATAR_MALE;
+  const displayImages = profile.image.length > 0 ? profile.image : [defaultAvatar];
+
   return (
-    <div 
+    <div
       className={`relative w-full mx-auto transition-all duration-300 ${
         isAnimating ? 'scale-95 opacity-0' : 'scale-100 opacity-100'
       }`}
@@ -141,54 +149,61 @@ export default function ProfileCard({ profile, onLike, onPass, isAnimating }: Pr
           }}
         >
           <img
-            src={profile.image[currentImageIndex] || '/placeholder-profile.jpg'}
+            src={brokenImages.has(currentImageIndex) || !profile.image[currentImageIndex]
+              ? (profile.gender === 'femme' ? AVATAR_FEMALE : AVATAR_MALE)
+              : profile.image[currentImageIndex]}
             alt={profile.name}
             className="w-full h-full absolute inset-0"
             style={{
               objectFit: 'cover',
               objectPosition: 'center',
             }}
+            onError={() => setBrokenImages(prev => new Set(prev).add(currentImageIndex))}
           />
 
           {/* Gradient overlay */}
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
-          {/* ✅ DOTS INDICATEURS - PLUS VISIBLES */}
+          {/* Tirets indicateurs en haut */}
           {profile.image.length > 1 && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 flex gap-2 z-30 bg-black/30 backdrop-blur-sm px-3 py-2 rounded-full">
+            <div className="absolute top-4 left-4 right-4 flex gap-1.5 z-30">
               {profile.image.map((_, index) => (
                 <button
                   key={index}
                   onClick={() => goToImage(index)}
                   style={{ touchAction: 'auto' }}
-                  className={`h-1.5 rounded-full transition-all ${
+                  className={`flex-1 h-1 rounded-full transition-all duration-300 ${
                     index === currentImageIndex
-                      ? 'w-8 bg-white shadow-lg'
-                      : 'w-6 bg-white/60'
+                      ? 'bg-white shadow-sm'
+                      : 'bg-white/40'
                   }`}
                 />
               ))}
             </div>
           )}
 
-          {/* Zones de clic pour navigation */}
+          {/* Flèches de navigation visibles */}
           {profile.image.length > 1 && (
             <>
               {currentImageIndex > 0 && (
                 <button
                   onClick={prevImage}
-                  className="absolute left-0 top-0 bottom-0 w-1/3 z-10"
                   style={{ touchAction: 'auto' }}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 bg-black/30 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-black/50 transition-colors active:scale-90"
                   aria-label="Photo précédente"
-                />
+                >
+                  <span className="text-lg font-bold leading-none">‹</span>
+                </button>
               )}
               {currentImageIndex < profile.image.length - 1 && (
                 <button
                   onClick={nextImage}
-                  className="absolute right-0 top-0 bottom-0 w-1/3 z-10"
                   style={{ touchAction: 'auto' }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 bg-black/30 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-black/50 transition-colors active:scale-90"
                   aria-label="Photo suivante"
-                />
+                >
+                  <span className="text-lg font-bold leading-none">›</span>
+                </button>
               )}
             </>
           )}
@@ -216,7 +231,7 @@ export default function ProfileCard({ profile, onLike, onPass, isAnimating }: Pr
           >
             <div className="flex items-center gap-2 mb-1">
               <h2 className="text-white text-2xl sm:text-3xl font-bold drop-shadow-lg">
-                {profile.name}, {profile.age}
+                {profile.name}{profile.age > 0 ? `, ${profile.age}` : ''}
               </h2>
               {/* ✅ BADGE BLEU VÉRIFIÉ - VISIBLE */}
               {profile.premiumTier && (
@@ -229,7 +244,7 @@ export default function ProfileCard({ profile, onLike, onPass, isAnimating }: Pr
             </div>
             <div className="flex items-center gap-1.5 text-white/90">
               <MapPin className="w-4 h-4" />
-              <span className="text-sm font-medium">{profile.location} • À {profile.distance} km</span>
+              <span className="text-sm font-medium">{profile.location}{profile.distance > 0 ? ` • À ${profile.distance} km` : ''}</span>
             </div>
           </div>
 
@@ -277,7 +292,7 @@ export default function ProfileCard({ profile, onLike, onPass, isAnimating }: Pr
           {/* Localisation */}
           <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
             <MapPin className="w-5 h-5" />
-            <span className="text-base">{profile.location} • À {profile.distance} km</span>
+            <span className="text-base">{profile.location}{profile.distance > 0 ? ` • À ${profile.distance} km` : ''}</span>
           </div>
 
           {/* Informations */}
@@ -354,9 +369,11 @@ export default function ProfileCard({ profile, onLike, onPass, isAnimating }: Pr
         </div>
       </div>
 
-      {/* BOUTONS LIKE/PASS - Remontés */}
-      <div 
-        className="absolute left-0 right-0 flex justify-center items-center gap-4 sm:gap-6 px-4 sm:px-6 pointer-events-none z-50"
+      {/* BOUTONS LIKE/PASS - cachés quand on scroll vers les infos */}
+      <div
+        className={`absolute left-0 right-0 flex justify-center items-center gap-4 sm:gap-6 px-4 sm:px-6 pointer-events-none z-50 transition-all duration-300 ${
+          isInfoVisible ? 'opacity-0 pointer-events-none translate-y-4' : 'opacity-100 translate-y-0'
+        }`}
         style={{
           bottom: 'calc(env(safe-area-inset-bottom) + 100px)',
         }}

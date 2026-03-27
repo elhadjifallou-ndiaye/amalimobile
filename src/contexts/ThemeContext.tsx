@@ -15,8 +15,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (saved !== null) {
       return JSON.parse(saved);
     }
-    // Sinon, utiliser la préférence système
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    // Sinon, blanc par défaut
+    return false;
   });
 
   useEffect(() => {

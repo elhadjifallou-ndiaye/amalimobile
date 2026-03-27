@@ -1,6 +1,28 @@
-import { useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Upload, User, Heart, Sparkles, Users } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { ArrowLeft, ArrowRight, Check, Upload, User, Heart, Sparkles, Users, MapPin, Loader2 } from 'lucide-react';
 import { supabase, authService } from '@/lib/supabase';
+
+const compressImage = (file: File): Promise<Blob> =>
+  new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const MAX_DIM = 1920;
+      let { width, height } = img;
+      if (width > MAX_DIM || height > MAX_DIM) {
+        if (width > height) { height = Math.round(height * MAX_DIM / width); width = MAX_DIM; }
+        else { width = Math.round(width * MAX_DIM / height); height = MAX_DIM; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Compression échouée')), 'image/jpeg', 0.85);
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Image invalide')); };
+    img.src = objectUrl;
+  });
 
 interface ProfileData {
   name: string;
@@ -20,13 +42,51 @@ interface ProfileData {
 }
 
 interface ProfileCompletionProps {
+  userId?: string;
   onComplete: () => void;
+  onSkipForNow?: () => void;
 }
 
-export default function ProfileCompletion({ onComplete }: ProfileCompletionProps) {
+export default function ProfileCompletion({ userId, onComplete, onSkipForNow }: ProfileCompletionProps) {
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    if (!userId) return;
+    supabase
+      .from('profiles')
+      .select('profile_photo_url')
+      .eq('id', userId)
+      .single()
+      .then(({ data }) => {
+        if (data?.profile_photo_url) setExistingPhotoUrl(data.profile_photo_url);
+      });
+  }, [userId]);
+
+  const detectLocation = () => {
+    if (!navigator.geolocation) return;
+    setGpsLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude, longitude } = pos.coords;
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&accept-language=fr`);
+          const data = await res.json();
+          const city = data.address?.city || data.address?.town || data.address?.village || data.address?.county || '';
+          const country = data.address?.country || '';
+          const locationText = [city, country].filter(Boolean).join(', ');
+          if (locationText) setProfileData(prev => ({ ...prev, location: locationText }));
+        } catch { /* ignore */ }
+        setGpsLoading(false);
+      },
+      () => setGpsLoading(false),
+      { timeout: 8000 }
+    );
+  };
   
   const [profileData, setProfileData] = useState<ProfileData>({
     name: '',
@@ -89,6 +149,11 @@ export default function ProfileCompletion({ onComplete }: ProfileCompletionProps
       alert('Maximum 6 photos');
       return;
     }
+    const oversized = files.filter(f => f.size > 20 * 1024 * 1024);
+    if (oversized.length > 0) {
+      alert('Certaines photos dépassent 20 MB et ne peuvent pas être ajoutées.');
+      return;
+    }
     setProfileData(prev => ({ ...prev, photos: [...prev.photos, ...files] }));
   };
 
@@ -101,7 +166,10 @@ export default function ProfileCompletion({ onComplete }: ProfileCompletionProps
 
   const canGoNext = () => {
     if (currentStep === 1) {
-      return profileData.name.trim().length > 0;
+      return profileData.name.trim().length > 0 && profileData.dateOfBirth.length > 0 && profileData.gender.length > 0;
+    }
+    if (currentStep === 5) {
+      return profileData.photos.length > 0 || !!existingPhotoUrl;
     }
     return true;
   };
@@ -118,46 +186,23 @@ export default function ProfileCompletion({ onComplete }: ProfileCompletionProps
     }
   };
 
-  const handleSkip = async () => {
-    if (!profileData.name.trim()) {
-      alert('Veuillez au moins entrer votre prénom');
+  const handleSkip = () => {
+    // Si on n'a pas encore de photo ET pas de photo existante, aller à l'étape 5
+    if (profileData.photos.length === 0 && !existingPhotoUrl) {
+      setCurrentStep(5);
       return;
     }
-
-    setLoading(true);
-
-    try {
-      const { user } = await authService.getCurrentUser();
-      if (!user) {
-        alert('Erreur : utilisateur non connecté');
-        return;
-      }
-
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({
-          name: profileData.name,
-          profile_completed: true,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', user.id);
-
-      if (updateError) throw updateError;
-      
-      setTimeout(() => {
-        onComplete();
-      }, 500);
-
-    } catch (error: any) {
-      alert('Erreur lors de la sauvegarde : ' + error.message);
-    } finally {
-      setLoading(false);
-    }
+    // Sinon soumettre directement
+    handleSubmit();
   };
 
   const handleSubmit = async () => {
-    if (!profileData.name.trim()) {
-      alert('Veuillez au moins entrer votre prénom');
+    if (!profileData.name.trim() || !profileData.dateOfBirth || !profileData.gender) {
+      alert('Prénom, date de naissance et genre sont obligatoires.');
+      return;
+    }
+    if (profileData.photos.length === 0 && !existingPhotoUrl) {
+      setCurrentStep(5);
       return;
     }
 
@@ -175,12 +220,12 @@ export default function ProfileCompletion({ onComplete }: ProfileCompletionProps
       
       if (profileData.photos.length > 0) {
         for (const photo of profileData.photos) {
-          const fileExt = photo.name.split('.').pop();
-          const fileName = `${user.id}/photo_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+          const compressed = await compressImage(photo);
+          const fileName = `${user.id}/photo_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
 
           const { error: uploadError } = await supabase.storage
             .from('profile-photos')
-            .upload(fileName, photo);
+            .upload(fileName, compressed, { contentType: 'image/jpeg' });
 
           if (uploadError) throw uploadError;
 
@@ -196,7 +241,6 @@ export default function ProfileCompletion({ onComplete }: ProfileCompletionProps
 
       const updateData: any = {
         name: profileData.name,
-        profile_completed: true,
         updated_at: new Date().toISOString(),
       };
 
@@ -209,7 +253,7 @@ export default function ProfileCompletion({ onComplete }: ProfileCompletionProps
       if (profileData.height) updateData.height = parseInt(profileData.height);
       if (profileData.prayerFrequency) updateData.prayer_frequency = profileData.prayerFrequency;
       if (profileData.relationshipGoal) updateData.relationship_goal = profileData.relationshipGoal;
-      if (profileData.hijabPreference) updateData.hijab_preference = profileData.hijabPreference;
+      if (profileData.hijabPreference) updateData.hijab_wear = profileData.hijabPreference;
       if (profileData.polygamyStance) updateData.polygamy_stance = profileData.polygamyStance;
       if (profileData.interests.length > 0) updateData.interests = profileData.interests;
       if (photoUrls.length > 0) {
@@ -237,11 +281,11 @@ export default function ProfileCompletion({ onComplete }: ProfileCompletionProps
   };
 
   return (
-    <div 
+    <div
       className="fixed inset-0 bg-gradient-to-b from-rose-50 to-amber-50 dark:from-slate-900 dark:to-slate-800 flex flex-col"
       style={{
+        height: '100dvh',
         paddingTop: 'env(safe-area-inset-top)',
-        paddingBottom: 'env(safe-area-inset-bottom)',
         paddingLeft: 'env(safe-area-inset-left)',
         paddingRight: 'env(safe-area-inset-right)',
       }}
@@ -270,23 +314,30 @@ export default function ProfileCompletion({ onComplete }: ProfileCompletionProps
             ))}
           </div>
           <p className="text-center text-sm text-slate-600 dark:text-slate-400 mt-2">
-            Étape {currentStep}/{totalSteps} (optionnel)
+            Étape {currentStep}/{totalSteps}{currentStep === 1 || currentStep === 5 ? ' *obligatoire' : ' (optionnel)'}
           </p>
         </div>
 
-        <button
-          onClick={handleSkip}
-          disabled={!profileData.name.trim() || loading}
-          className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 transition-all"
-        >
-          Passer
-        </button>
+        {currentStep > 1 && currentStep < 5 ? (
+          <button
+            onClick={handleSkip}
+            disabled={loading}
+            className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 transition-all"
+          >
+            {profileData.photos.length === 0 ? 'Ajouter une photo →' : 'Passer'}
+          </button>
+        ) : (
+          <div className="w-10" />
+        )}
       </div>
 
-      {/* Content - Scrollable + Centré */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="min-h-full flex items-center justify-center px-5 py-6">
-          <div className="w-full max-w-lg">
+      {/* Content - Scrollable */}
+      <div
+        className="flex-1 overflow-y-auto"
+        style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
+      >
+        <div className="px-5 py-6">
+          <div className="w-full max-w-lg mx-auto">
         
         {/* Step 1: Informations de base */}
         {currentStep === 1 && (
@@ -296,9 +347,9 @@ export default function ProfileCompletion({ onComplete }: ProfileCompletionProps
                 <User className="w-8 h-8 text-white" />
               </div>
               <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Bienvenue !</h2>
-              <p className="text-slate-600 dark:text-slate-400">Entrez au moins votre prénom pour commencer</p>
-              <p className="text-sm text-amber-600 dark:text-amber-400 mt-2">
-                ✨ Tout est optionnel, vous pourrez compléter plus tard
+              <p className="text-slate-600 dark:text-slate-400">Remplissez les informations essentielles</p>
+              <p className="text-sm text-rose-500 dark:text-rose-400 mt-2">
+                * Prénom, date de naissance, genre et photo sont obligatoires
               </p>
             </div>
 
@@ -314,7 +365,8 @@ export default function ProfileCompletion({ onComplete }: ProfileCompletionProps
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Date de naissance (optionnel)</label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Date de naissance *</label>
+              <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">⚠️ Vous devez avoir au moins 18 ans pour utiliser Amali</p>
               <input
                 type="date"
                 value={profileData.dateOfBirth}
@@ -325,7 +377,7 @@ export default function ProfileCompletion({ onComplete }: ProfileCompletionProps
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Genre (optionnel)</label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Genre *</label>
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
@@ -354,13 +406,24 @@ export default function ProfileCompletion({ onComplete }: ProfileCompletionProps
 
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Localisation (optionnel)</label>
-              <input
-                type="text"
-                value={profileData.location}
-                onChange={(e) => setProfileData({ ...profileData, location: e.target.value })}
-                placeholder="Ville, Pays"
-                className="w-full px-4 py-3.5 border border-slate-300 dark:border-slate-600 rounded-2xl focus:ring-2 focus:ring-rose-500 focus:border-transparent bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={profileData.location}
+                  onChange={(e) => setProfileData({ ...profileData, location: e.target.value })}
+                  placeholder="Ville, Pays"
+                  className="flex-1 px-4 py-3.5 border border-slate-300 dark:border-slate-600 rounded-2xl focus:ring-2 focus:ring-rose-500 focus:border-transparent bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                />
+                <button
+                  type="button"
+                  onClick={detectLocation}
+                  disabled={gpsLoading}
+                  className="px-3 border border-slate-300 dark:border-slate-600 rounded-2xl bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                  title="Détecter ma position"
+                >
+                  {gpsLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <MapPin className="w-5 h-5" />}
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -570,9 +633,24 @@ export default function ProfileCompletion({ onComplete }: ProfileCompletionProps
               <div className="w-16 h-16 bg-gradient-to-br from-amber-500 to-orange-500 rounded-full mx-auto mb-4 flex items-center justify-center">
                 <Upload className="w-8 h-8 text-white" />
               </div>
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Vos photos</h2>
-              <p className="text-slate-600 dark:text-slate-400">Ajoutez des photos (optionnel, max 6)</p>
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Votre photo</h2>
+              <p className="text-slate-600 dark:text-slate-400">
+                {existingPhotoUrl
+                  ? 'Votre photo actuelle est conservée. Vous pouvez en ajouter une nouvelle.'
+                  : <>Ajoutez au moins une photo <span className="text-rose-500 font-semibold">*</span> (max 6)</>}
+              </p>
             </div>
+
+            {existingPhotoUrl && profileData.photos.length === 0 && (
+              <div className="flex flex-col items-center gap-2">
+                <p className="text-xs text-slate-500 dark:text-slate-400">Photo actuelle</p>
+                <img
+                  src={existingPhotoUrl}
+                  alt="Photo actuelle"
+                  className="w-24 h-24 object-cover rounded-2xl border-2 border-rose-300"
+                />
+              </div>
+            )}
 
             <div className="grid grid-cols-3 gap-3">
               {profileData.photos.map((photo, index) => (
@@ -593,18 +671,23 @@ export default function ProfileCompletion({ onComplete }: ProfileCompletionProps
               ))}
 
               {profileData.photos.length < 6 && (
-                <label className="aspect-square border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:border-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="aspect-square border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:border-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all"
+                >
                   <Upload className="w-8 h-8 text-slate-400 mb-2" />
                   <span className="text-xs text-slate-600 dark:text-slate-400">Ajouter</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handlePhotoUpload}
-                    className="hidden"
-                  />
-                </label>
+                </button>
               )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handlePhotoUpload}
+                style={{ display: 'none' }}
+              />
             </div>
 
             <p className="text-sm text-slate-600 dark:text-slate-400 text-center">
@@ -617,7 +700,10 @@ export default function ProfileCompletion({ onComplete }: ProfileCompletionProps
       </div>
 
       {/* Footer - Fixed */}
-      <div className="flex-shrink-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 px-5 py-4 space-y-3">
+      <div
+        className="flex-shrink-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 px-5 pt-4 space-y-3"
+        style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 16px)', position: 'relative' }}
+      >
         {currentStep < totalSteps ? (
           <button
             onClick={handleNext}
@@ -647,13 +733,24 @@ export default function ProfileCompletion({ onComplete }: ProfileCompletionProps
           </button>
         )}
 
-        <button
-          onClick={handleSkip}
-          disabled={!profileData.name.trim() || loading}
-          className="w-full py-3 border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-2xl font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Commencer avec juste mon prénom
-        </button>
+        {currentStep > 1 && currentStep < 5 && (
+          <button
+            onClick={handleSkip}
+            disabled={loading}
+            className="w-full py-3 border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-2xl font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {profileData.photos.length === 0 ? "Ajouter une photo d'abord →" : 'Passer les étapes restantes'}
+          </button>
+        )}
+
+        {currentStep === 1 && onSkipForNow && (
+          <button
+            onClick={onSkipForNow}
+            className="w-full py-3 text-sm text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-400 transition-colors"
+          >
+            ← Retour à la connexion
+          </button>
+        )}
       </div>
     </div>
   );

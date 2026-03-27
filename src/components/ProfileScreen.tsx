@@ -16,6 +16,7 @@ export default function ProfileScreen() {
   
   const [isPremium, setIsPremium] = useState(false);
   const [premiumTier, setPremiumTier] = useState<string | null>(null);
+  const [location, setLocation] = useState<string | null>(null);
   
   const [stats, setStats] = useState({
     matches: 0,
@@ -36,7 +37,7 @@ export default function ProfileScreen() {
       
       const { data: profile } = await supabase
         .from('profiles')
-        .select('profile_photo_url, is_premium, premium_tier')
+        .select('profile_photo_url, is_premium, premium_tier, location')
         .eq('id', user.id)
         .single();
       
@@ -44,6 +45,9 @@ export default function ProfileScreen() {
       
       if (profile?.profile_photo_url) {
         setProfilePhotoUrl(profile.profile_photo_url);
+      }
+      if (profile?.location) {
+        setLocation(profile.location);
       }
       
       if (profile?.is_premium) {
@@ -74,10 +78,10 @@ export default function ProfileScreen() {
       }
 
       const { count: conversationsCount, error: conversationsError } = await supabase
-        .from('matches')
+        .from('conversations')
         .select('*', { count: 'exact', head: true })
         .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
-        .eq('status', 'accepted');
+        .not('last_message', 'is', null);
 
       if (conversationsError) {
         console.error('Erreur conversations:', conversationsError);
@@ -312,7 +316,10 @@ export default function ProfileScreen() {
       )}
       
       {/* Content scrollable */}
-      <div className="flex-1 overflow-y-auto px-5 py-6 pt-20">
+      <div
+        className="flex-1 overflow-y-auto px-5 pb-6"
+        style={{ paddingTop: 'calc(max(env(safe-area-inset-top), 12px) + 4.5rem)' }}
+      >
         {/* Carte de profil */}
         <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 p-6 mb-6">
           {/* Image de profil et info de base */}
@@ -323,6 +330,10 @@ export default function ProfileScreen() {
                   src={profilePhotoUrl}
                   alt="Photo de profil"
                   className="w-24 h-24 rounded-full object-cover border-4 border-white dark:border-slate-700 shadow-lg"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    setProfilePhotoUrl(null);
+                  }}
                 />
               ) : (
                 <div className="w-24 h-24 bg-gradient-to-br from-rose-500 to-amber-500 rounded-full flex items-center justify-center text-white border-4 border-white dark:border-slate-700 shadow-lg">
@@ -366,8 +377,8 @@ export default function ProfileScreen() {
             {user?.user_metadata?.phone && (
               <p className="text-slate-500 dark:text-slate-500 text-sm mb-3">{user.user_metadata.phone}</p>
             )}
-            {!user?.user_metadata?.phone && (
-              <p className="text-slate-500 dark:text-slate-500 text-sm mb-3">Dakar, Sénégal</p>
+            {location && (
+              <p className="text-slate-500 dark:text-slate-500 text-sm mb-3">{location}</p>
             )}
             
             <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-full">
@@ -455,7 +466,7 @@ export default function ProfileScreen() {
           <MenuItem 
             icon={HelpCircle} 
             label="Aide & Support" 
-            onClick={() => alert('Contactez-nous à fallound1000@gmail.com')} 
+            onClick={() => window.open('https://www.amali.live/Centre-d\'aide.html', '_blank')}
           />
           <MenuItem 
             icon={Home} 

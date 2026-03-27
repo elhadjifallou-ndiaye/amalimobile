@@ -180,40 +180,9 @@ export const useLikes = (userId: string) => {
   };
 
   // Consommer un like normal
+  // TODO: réactiver la logique premium quand le business sera configuré
   const consumeLike = async (): Promise<boolean> => {
-    if (!likesData) return false;
-
-    // Boost actif = likes illimités
-    if (likesData.boost_active && likesData.boost_expires_at) {
-      if (new Date(likesData.boost_expires_at) > new Date()) {
-        return true; // Likes illimités pendant boost
-      } else {
-        // Boost expiré
-        await deactivateBoost();
-      }
-    }
-
-    // Vérifier les likes restants
-    if (likesData.likes_remaining <= 0) {
-      return false; // Plus de likes
-    }
-
-    // Consommer 1 like
-    const { data, error } = await supabase
-      .from('user_likes')
-      .update({
-        likes_remaining: likesData.likes_remaining - 1,
-      })
-      .eq('user_id', userId)
-      .select()
-      .single();
-
-    if (!error && data) {
-      setLikesData(data);
-      return true;
-    }
-
-    return false;
+    return true; // Likes illimités pour tous (mode beta)
   };
 
   // Consommer un super like
@@ -286,19 +255,6 @@ export const useLikes = (userId: string) => {
     }
   };
 
-  // Désactiver boost
-  const deactivateBoost = async () => {
-    await supabase
-      .from('user_likes')
-      .update({
-        boost_active: false,
-        boost_expires_at: null,
-      })
-      .eq('user_id', userId);
-
-    await loadLikesData();
-  };
-
   // Mettre à jour le tier d'abonnement
   const updateSubscriptionTier = async (tier: LikesData['subscription_tier']) => {
     const limits = LIMITS[tier];
@@ -321,17 +277,9 @@ export const useLikes = (userId: string) => {
   };
 
   // Vérifier si on peut liker
+  // TODO: réactiver la logique premium quand le business sera configuré
   const canLike = (): boolean => {
-    if (!likesData) return false;
-
-    // Boost actif
-    if (likesData.boost_active && likesData.boost_expires_at) {
-      if (new Date(likesData.boost_expires_at) > new Date()) {
-        return true;
-      }
-    }
-
-    return likesData.likes_remaining > 0;
+    return true; // Likes illimités pour tous (mode beta)
   };
 
   // Vérifier si on peut super liker

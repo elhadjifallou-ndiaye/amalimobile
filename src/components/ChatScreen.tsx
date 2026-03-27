@@ -164,7 +164,6 @@ export default function ChatScreen({ conversation, currentUserId, onBack }: Chat
     }
   };
 
-  // Bloquer l'utilisateur
   const handleBlock = async () => {
     const confirm = window.confirm(`Êtes-vous sûr de vouloir bloquer ${conversation.other_user_name} ?\n\nVous ne pourrez plus recevoir de messages de cette personne.`);
     
@@ -193,20 +192,17 @@ export default function ChatScreen({ conversation, currentUserId, onBack }: Chat
     }
   };
 
-  // Supprimer la conversation
   const handleDelete = async () => {
     const confirm = window.confirm(`Êtes-vous sûr de vouloir supprimer cette conversation avec ${conversation.other_user_name} ?\n\nCette action est irréversible.`);
     
     if (!confirm) return;
 
     try {
-      // Supprimer tous les messages
       await supabase
         .from('messages')
         .delete()
         .eq('conversation_id', conversation.id);
 
-      // Supprimer la conversation
       const { error } = await supabase
         .from('conversations')
         .delete()
@@ -223,7 +219,6 @@ export default function ChatScreen({ conversation, currentUserId, onBack }: Chat
     }
   };
 
-  // Signaler l'utilisateur
   const handleReport = async (reason: string, details: string) => {
     try {
       const { error } = await supabase
@@ -288,10 +283,21 @@ export default function ChatScreen({ conversation, currentUserId, onBack }: Chat
         prev.map(msg => msg.id === tempMessage.id ? insertedMessage : msg)
       );
 
+      // ✅ CORRIGÉ : Mise à jour de last_message
       const unreadColumn = conversation.user1_id === currentUserId 
         ? 'user2_unread_count' 
         : 'user1_unread_count';
 
+      // Récupérer le compteur actuel
+      const { data: currentConv } = await supabase
+        .from('conversations')
+        .select(unreadColumn)
+        .eq('id', conversation.id)
+        .single();
+
+      const currentUnread = (currentConv?.[unreadColumn as keyof typeof currentConv] as number | undefined) || 0;
+
+      // Mettre à jour avec le nouveau compteur
       await supabase
         .from('conversations')
         .update({
@@ -299,9 +305,11 @@ export default function ChatScreen({ conversation, currentUserId, onBack }: Chat
             ? messageContent.substring(0, 50) + '...' 
             : messageContent,
           last_message_at: new Date().toISOString(),
-          [unreadColumn]: supabase.rpc('increment', { x: 1 }),
+          [unreadColumn]: currentUnread + 1,
         })
         .eq('id', conversation.id);
+
+      console.log('✅ Conversation mise à jour avec last_message:', messageContent);
 
       inputRef.current?.focus();
     } catch (error) {
@@ -428,7 +436,6 @@ export default function ChatScreen({ conversation, currentUserId, onBack }: Chat
           </div>
         </button>
 
-        {/* Bouton Menu (3 points) */}
         <div className="relative">
           <button
             onClick={() => setShowMenu(!showMenu)}
@@ -437,7 +444,6 @@ export default function ChatScreen({ conversation, currentUserId, onBack }: Chat
             <MoreVertical className="w-5 h-5 text-slate-700 dark:text-slate-300" />
           </button>
 
-          {/* Menu déroulant */}
           {showMenu && (
             <>
               <div 
@@ -477,7 +483,6 @@ export default function ChatScreen({ conversation, currentUserId, onBack }: Chat
         </div>
       </div>
 
-      {/* Modal de signalement */}
       {showReportModal && (
         <ReportModal
           userName={conversation.other_user_name}
@@ -599,7 +604,6 @@ export default function ChatScreen({ conversation, currentUserId, onBack }: Chat
   );
 }
 
-// Composant Modal de signalement
 interface ReportModalProps {
   userName: string;
   onClose: () => void;

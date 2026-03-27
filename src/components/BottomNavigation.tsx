@@ -28,14 +28,14 @@ export default function BottomNavigation({
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bottom-nav-safe">
       {/* ✅ TINDER STYLE: Fond dégradé avec flou */}
-      <div className="absolute inset-0 bg-gradient-to-t from-white/95 via-white/90 to-transparent dark:from-slate-900/95 dark:via-slate-900/90 backdrop-blur-lg"></div>
+      <div className="absolute inset-0 bg-gradient-to-t from-white/95 via-white/90 to-transparent dark:from-black/95 dark:via-black/90 backdrop-blur-lg"></div>
       
-      <div className="relative max-w-md mx-auto px-4 py-2">
+      <div className="relative max-w-md mx-auto px-4 py-1">
         <div className="flex items-center justify-around gap-1">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeScreen === item.id;
-            const hasNotification = item.notificationCount && item.notificationCount > 0;
+            const hasNotification = (item.notificationCount ?? 0) > 0;
 
             return (
               <button
@@ -45,35 +45,30 @@ export default function BottomNavigation({
               >
                 {/* ✅ BOUTON CIRCULAIRE TINDER STYLE */}
                 <div className={cn(
-                  "w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300",
-                  isActive 
-                    ? "bg-gradient-to-br from-rose-500 to-amber-500 shadow-lg shadow-rose-500/30 scale-105" 
-                    : "bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 hover:scale-105"
+                  "w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300",
+                  isActive
+                    ? "bg-gradient-to-br from-rose-500 to-amber-500 shadow-lg shadow-rose-500/30 scale-105"
+                    : "bg-slate-100 dark:bg-neutral-900 hover:bg-slate-200 dark:hover:bg-neutral-800 hover:scale-105"
                 )}>
                   <div className="relative">
                     <Icon className={cn(
                       "w-5 h-5 transition-all",
                       isActive ? "text-white stroke-[2.5]" : "text-slate-600 dark:text-slate-400"
                     )} />
-                    
-                    {/* ✅ BADGE CIRCULAIRE EN HAUT À DROITE */}
+
+                    {/* Point rouge - s'affiche uniquement si messages non lus */}
                     {hasNotification && (
-                      <div className="absolute -top-2 -right-2 min-w-[18px] h-[18px] bg-emerald-500 rounded-full flex items-center justify-center px-0.5 shadow-md">
-                        <span className="text-[9px] font-bold text-white leading-none">
-                          {item.notificationCount! > 99 ? '99+' : item.notificationCount}
-                        </span>
-                      </div>
+                      <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-black shadow-sm" />
                     )}
                   </div>
                 </div>
                 
-                {/* ✅ LABEL OPTIONNEL (caché par défaut, visible au hover) */}
-                <span className={cn(
-                  "text-[9px] font-medium mt-0.5 transition-opacity",
-                  isActive ? "text-rose-500 dark:text-rose-400 opacity-100" : "text-slate-500 dark:text-slate-400 opacity-0 group-hover:opacity-100"
-                )}>
-                  {item.label}
-                </span>
+                {/* Label — visible uniquement si actif */}
+                {isActive && (
+                  <span className="text-[9px] font-medium mt-0.5 text-rose-500 dark:text-rose-400">
+                    {item.label}
+                  </span>
+                )}
               </button>
             );
           })}

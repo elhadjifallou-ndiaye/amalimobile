@@ -33,9 +33,10 @@ export default function MatchModal({
     // Animation des coeurs
     setTimeout(() => setHeartsAnimation(true), 800);
     
-    // Vibration (si supporté)
+    // Vibration festive (si supporté)
     if (navigator.vibrate) {
-      navigator.vibrate([200, 100, 200]);
+      // Intro + crescendo + célébration finale
+      navigator.vibrate([100, 50, 100, 50, 200, 100, 300, 100, 400]);
     }
   }, []);
 

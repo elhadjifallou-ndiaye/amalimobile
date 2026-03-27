@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase, authService } from '@/lib/supabase';
 
 export interface Notification {
@@ -19,20 +19,31 @@ export interface Notification {
   created_at: string;
 }
 
-export function useNotifications() {
+function updateAppBadge(count: number) {
+  if ('setAppBadge' in navigator) {
+    if (count > 0) {
+      (navigator as any).setAppBadge(count).catch(() => {});
+    } else {
+      (navigator as any).clearAppBadge().catch(() => {});
+    }
+  }
+}
+
+export function useNotifications(userId?: string) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const channelId = useRef(`notifications-${Math.random().toString(36).slice(2)}`).current;
 
-  const loadNotifications = async () => {
+  const loadNotifications = async (uid?: string) => {
     try {
-      const { user } = await authService.getCurrentUser();
-      if (!user) return;
+      const resolvedUid = uid ?? (await authService.getCurrentUser()).user?.id;
+      if (!resolvedUid) return;
 
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', resolvedUid)
         .order('created_at', { ascending: false })
         .limit(50);
 
@@ -41,8 +52,10 @@ export function useNotifications() {
         return;
       }
 
+      const unread = data?.filter(n => !n.is_read).length || 0;
       setNotifications(data || []);
-      setUnreadCount(data?.filter(n => !n.is_read).length || 0);
+      setUnreadCount(unread);
+      updateAppBadge(unread);
       console.log('✅ Notifications chargées:', data?.length);
     } catch (error) {
       console.error('❌ Erreur:', error);
@@ -69,7 +82,11 @@ export function useNotifications() {
       setNotifications(prev =>
         prev.map(n => n.id === notificationId ? { ...n, is_read: true, read_at: new Date().toISOString() } : n)
       );
-      setUnreadCount(prev => Math.max(0, prev - 1));
+      setUnreadCount(prev => {
+        const next = Math.max(0, prev - 1);
+        updateAppBadge(next);
+        return next;
+      });
 
       console.log('✅ Notification marquée comme lue');
     } catch (error) {
@@ -98,6 +115,7 @@ export function useNotifications() {
 
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true, read_at: new Date().toISOString() })));
       setUnreadCount(0);
+      updateAppBadge(0);
 
       console.log('✅ Toutes les notifications marquées comme lues');
     } catch (error) {
@@ -126,28 +144,33 @@ export function useNotifications() {
   };
 
   useEffect(() => {
-    loadNotifications();
+    // Résoudre le userId : soit passé en prop, soit via authService
+    const setup = async () => {
+      const uid = userId ?? (await authService.getCurrentUser()).user?.id;
+      if (!uid) return;
 
-    const setupRealtimeSubscription = async () => {
-      const { user } = await authService.getCurrentUser();
-      if (!user) return;
+      // Charger les notifications initiales
+      await loadNotifications(uid);
 
+      // Abonnement realtime
       const subscription = supabase
-        .channel('notifications-changes')
+        .channel(`${channelId}-${uid}`)
         .on(
           'postgres_changes',
           {
             event: 'INSERT',
             schema: 'public',
             table: 'notifications',
-            filter: `user_id=eq.${user.id}`,
+            filter: `user_id=eq.${uid}`,
           },
           (payload) => {
-            console.log('🔔 Nouvelle notification reçue !', payload);
-            
             const newNotification = payload.new as Notification;
             setNotifications(prev => [newNotification, ...prev]);
-            setUnreadCount(prev => prev + 1);
+            setUnreadCount(prev => {
+              const next = prev + 1;
+              updateAppBadge(next);
+              return next;
+            });
 
             if ('Notification' in window && Notification.permission === 'granted') {
               new Notification(newNotification.title, {
@@ -159,13 +182,14 @@ export function useNotifications() {
         )
         .subscribe();
 
-      return () => {
-        subscription.unsubscribe();
-      };
+      return () => { subscription.unsubscribe(); };
     };
 
-    setupRealtimeSubscription();
-  }, []);
+    let cleanup: (() => void) | undefined;
+    setup().then(fn => { cleanup = fn; });
+
+    return () => { cleanup?.(); };
+  }, [userId]); // ← se relance quand le userId change (ex: après login)
 
   return {
     notifications,
