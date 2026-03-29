@@ -50,7 +50,8 @@ const TIER_LABELS: Record<string, string> = {
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, content-type, x-webhook-signature',
+  'Access-Control-Allow-Headers': 'authorization, content-type, x-webhook-signature, x-client-info, apikey',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 function json(data: unknown, status = 200): Response {
