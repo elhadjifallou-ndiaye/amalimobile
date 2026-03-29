@@ -299,7 +299,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }: PaymentModalP
                 En attente de confirmation
               </p>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Payez sur la page PayDunya, puis revenez ici
+                Payez sur la page PayTech, puis revenez ici
               </p>
             </div>
           </div>
