@@ -116,6 +116,11 @@ export default function PaymentModal({ plan, onClose, onSuccess }: PaymentModalP
         return;
       }
 
+      // Ouvrir la page de paiement PayDunya dans un nouvel onglet
+      if (result.paymentUrl) {
+        window.open(result.paymentUrl, '_blank', 'noopener,noreferrer');
+      }
+
       setStep('polling');
       startPolling(result.transactionRef);
     } catch {
@@ -286,9 +291,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }: PaymentModalP
                 En attente de confirmation
               </p>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                {selectedMethod === 'orange-money' || selectedMethod === 'wave'
-                  ? 'Vérifiez votre téléphone et confirmez le paiement'
-                  : 'Validez le paiement sur la page sécurisée'}
+                Complétez le paiement dans l'onglet ouvert, puis revenez ici
               </p>
             </div>
           </div>

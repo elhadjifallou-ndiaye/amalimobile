@@ -83,7 +83,7 @@ async function verifyWithPaydunya(invoiceToken: string): Promise<{
     return { verified: false, status: 'error', amount: 0, customData: {} };
   }
 
-  const res = await fetch(`${base}/softorder/check-status/${invoiceToken}`, {
+  const res = await fetch(`${base}/checkout-invoice/confirm/${invoiceToken}`, {
     headers: {
       'PAYDUNYA-MASTER-KEY':  masterKey,
       'PAYDUNYA-PRIVATE-KEY': privateKey,

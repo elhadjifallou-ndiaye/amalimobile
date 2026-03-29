@@ -171,7 +171,7 @@ Deno.serve(async (req: Request) => {
     // Créer la facture chez PayDunya
     let paydunya_res: Response;
     try {
-      paydunya_res = await fetch(`${paydunya_base()}/softorder`, {
+      paydunya_res = await fetch(`${paydunya_base()}/checkout-invoice/create`, {
         method: 'POST',
         headers: paydunya_headers(),
         body: JSON.stringify(paydunya_body),
@@ -181,17 +181,25 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'Impossible de contacter PayDunya' }, 502);
     }
 
-    const paydunya_data = await paydunya_res.json();
+    let paydunya_data: Record<string, unknown>;
+    try {
+      paydunya_data = await paydunya_res.json();
+    } catch {
+      const text = await paydunya_res.text().catch(() => '(unreadable)');
+      console.error('PayDunya non-JSON response:', text.substring(0, 200));
+      return json({ error: 'Réponse invalide de PayDunya' }, 502);
+    }
 
-    if (paydunya_data.response_code !== '00') {
+    if (paydunya_data['response_code'] !== '00') {
       console.error('PayDunya error:', JSON.stringify(paydunya_data));
       return json({
-        error: paydunya_data.response_text ?? 'Erreur PayDunya',
+        error: String(paydunya_data['response_text'] ?? 'Erreur PayDunya'),
         debug: paydunya_data,
       }, 400);
     }
 
-    const paymentUrl: string = paydunya_data.description?.payment_url ?? paydunya_data.hosted_invoice ?? '';
+    // response_text contient l'URL de paiement quand response_code === '00'
+    const paymentUrl: string = String(paydunya_data['response_text'] ?? '');
 
     // Insérer la ligne pending dans payments
     const { error: dbError } = await supabase.from('payments').insert({
