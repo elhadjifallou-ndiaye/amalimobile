@@ -1,4 +1,4 @@
-import { Compass, Users, MessageCircle, User } from 'lucide-react';
+import { Compass, Users, MessageCircle, User, Heart } from 'lucide-react';
 import { ScreenType } from '@/types';
 import { cn } from '@/utils/cn';
 
@@ -6,19 +6,27 @@ interface BottomNavigationProps {
   activeScreen: ScreenType;
   onNavigate: (screen: ScreenType) => void;
   messagesNotificationCount?: number;
+  likesNotificationCount?: number;
 }
 
-export default function BottomNavigation({ 
-  activeScreen, 
+export default function BottomNavigation({
+  activeScreen,
   onNavigate,
-  messagesNotificationCount = 0
+  messagesNotificationCount = 0,
+  likesNotificationCount = 0,
 }: BottomNavigationProps) {
   const navItems = [
     { id: 'discovery' as ScreenType, icon: Compass, label: 'Découvrir' },
     { id: 'community' as ScreenType, icon: Users, label: 'Communauté' },
-    { 
-      id: 'messages' as ScreenType, 
-      icon: MessageCircle, 
+    {
+      id: 'likes' as ScreenType,
+      icon: Heart,
+      label: 'Likes',
+      notificationCount: likesNotificationCount,
+    },
+    {
+      id: 'messages' as ScreenType,
+      icon: MessageCircle,
       label: 'Messages',
       notificationCount: messagesNotificationCount
     },

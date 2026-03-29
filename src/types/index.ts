@@ -61,7 +61,7 @@ export interface PremiumFeature {
   included: boolean;
 }
 
-export type ScreenType = 'discovery' | 'community' | 'messages' | 'profile';
+export type ScreenType = 'discovery' | 'community' | 'messages' | 'profile' | 'likes';
 
 export interface User {
   id: number;

@@ -4,6 +4,7 @@ import DiscoveryScreen from '@/components/DiscoveryScreen';
 import CommunityScreen from '@/components/CommunityScreen';
 import MessagesScreen from '@/components/MessagesScreen';
 import ProfileScreen from '@/components/ProfileScreen';
+import WhoLikedMeScreen from '@/components/WhoLikedMeScreen';
 import BottomNavigation from '@/components/BottomNavigation';
 import AuthScreen from '@/components/AuthScreen';
 import ProfileCompletion from '@/components/ProfileCompletion';
@@ -27,6 +28,7 @@ function AppContent() {
   const [showSplash, setShowSplash] = useState(true);
   const [isInChat, setIsInChat] = useState(false);
   const [messagesNotificationCount, setMessagesNotificationCount] = useState(0);
+  const [likesNotificationCount, setLikesNotificationCount] = useState(0);
   const [initialConversationId, setInitialConversationId] = useState<string | null>(null);
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
   const [needsGender, setNeedsGender] = useState(false);
@@ -69,6 +71,35 @@ function AppContent() {
     const channel = supabase
       .channel(`app-conv-badge-${user.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, calcBadge)
+      .subscribe();
+
+    return () => { channel.unsubscribe(); };
+  }, [user?.id]);
+
+  // Badge likes reçus (nouveaux depuis la dernière visite de l'onglet)
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const calcLikesBadge = async () => {
+      const since = sessionStart.current;
+      const { count } = await supabase
+        .from('likes')
+        .select('*', { count: 'exact', head: true })
+        .eq('to_user_id', user.id)
+        .gte('created_at', since);
+      setLikesNotificationCount(count ?? 0);
+    };
+
+    calcLikesBadge();
+
+    const channel = supabase
+      .channel(`app-likes-badge-${user.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'likes',
+        filter: `to_user_id=eq.${user.id}`,
+      }, () => setLikesNotificationCount((n) => n + 1))
       .subscribe();
 
     return () => { channel.unsubscribe(); };
@@ -302,13 +333,24 @@ function AppContent() {
                 onInitialConversationHandled={() => setInitialConversationId(null)}
               />
             )}
+            {activeScreen === 'likes' && (
+              <WhoLikedMeScreen
+                notificationCount={unreadCount}
+                onNotificationClick={() => setShowNotificationsPanel(true)}
+                onOpenPremium={() => setActiveScreen('profile')}
+              />
+            )}
             {activeScreen === 'profile' && <ProfileScreen />}
 
             {!isInChat && (
               <BottomNavigation
                 activeScreen={activeScreen}
-                onNavigate={setActiveScreen}
+                onNavigate={(screen) => {
+                  if (screen === 'likes') setLikesNotificationCount(0);
+                  setActiveScreen(screen);
+                }}
                 messagesNotificationCount={messagesNotificationCount}
+                likesNotificationCount={likesNotificationCount}
               />
             )}
           </div>

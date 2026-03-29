@@ -17,6 +17,7 @@ export default function ProfileScreen() {
   const [isPremium, setIsPremium] = useState(false);
   const [premiumTier, setPremiumTier] = useState<string | null>(null);
   const [location, setLocation] = useState<string | null>(null);
+  const [gender, setGender] = useState<string>('');
   
   const [stats, setStats] = useState({
     matches: 0,
@@ -37,7 +38,7 @@ export default function ProfileScreen() {
       
       const { data: profile } = await supabase
         .from('profiles')
-        .select('profile_photo_url, is_premium, premium_tier, location')
+        .select('profile_photo_url, is_premium, premium_tier, location, gender')
         .eq('id', user.id)
         .single();
       
@@ -48,6 +49,9 @@ export default function ProfileScreen() {
       }
       if (profile?.location) {
         setLocation(profile.location);
+      }
+      if (profile?.gender) {
+        setGender(profile.gender);
       }
       
       if (profile?.is_premium) {
@@ -293,7 +297,7 @@ export default function ProfileScreen() {
   };
 
   if (showPremium) {
-    return <PremiumScreen onClose={() => {
+    return <PremiumScreen userGender={gender} onClose={() => {
       setShowPremium(false);
       loadUser();
     }} />;

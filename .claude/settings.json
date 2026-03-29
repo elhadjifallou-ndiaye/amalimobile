@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(export PATH=\"/c/supabase-cli:$PATH\")",
+      "Bash(export SUPABASE_ACCESS_TOKEN=sbp_15dbf03c166c92130867957e484341459bf71f4c)",
+      "Bash(supabase functions:*)",
+      "Bash(supabase secrets:*)",
+      "Bash(supabase db:*)"
+    ]
+  }
+}

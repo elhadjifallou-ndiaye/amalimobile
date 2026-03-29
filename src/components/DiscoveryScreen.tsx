@@ -116,18 +116,17 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
 
       console.log('📊 Profils bruts trouvés:', allProfiles?.length || 0);
 
-      // Récupérer uniquement les vrais likes (pas les passes → ils peuvent réapparaître)
+      // Récupérer les likes (jamais réaffichés)
       const { data: myLikes, error: likesError } = await supabase
         .from('likes')
-        .select('to_user_id')
-        .eq('from_user_id', user.id)
-        .in('like_type', ['like', 'super_like']);
+        .select('to_user_id, like_type')
+        .eq('from_user_id', user.id);
 
       if (likesError) {
         console.error('⚠️ Erreur récupération likes:', likesError);
       }
 
-      // 🔥 NOUVEAU : Récupérer les matchs existants
+      // Récupérer les matchs existants
       const { data: myMatches, error: matchesError } = await supabase
         .from('matches')
         .select('user1_id, user2_id')
@@ -137,22 +136,28 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
         console.error('⚠️ Erreur récupération matchs:', matchesError);
       }
 
-      // Créer un Set des IDs déjà vus
-      const seenUserIds = new Set<string>();
-      
-      // Ajouter les profils likés/passés
-      myLikes?.forEach(like => seenUserIds.add(like.to_user_id));
-      
-      // Ajouter les matchs
-      myMatches?.forEach(match => {
-        if (match.user1_id === user.id) {
-          seenUserIds.add(match.user2_id);
+      // IDs likés → exclus définitivement
+      const likedIds = new Set<string>();
+      // IDs passés → repoussés à la fin
+      const passedIds = new Set<string>();
+
+      myLikes?.forEach(like => {
+        if (like.like_type === 'pass') {
+          passedIds.add(like.to_user_id);
         } else {
-          seenUserIds.add(match.user1_id);
+          likedIds.add(like.to_user_id);
         }
       });
 
-      console.log('🚫 Profils déjà vus:', seenUserIds.size);
+      myMatches?.forEach(match => {
+        const otherId = match.user1_id === user.id ? match.user2_id : match.user1_id;
+        likedIds.add(otherId);
+      });
+
+      // seenUserIds = seulement ceux qu'on exclut totalement (likes + matchs)
+      const seenUserIds = likedIds;
+
+      console.log('🚫 Likés (exclus):', likedIds.size, '| Passés (fin de file):', passedIds.size);
 
       const myLat = myProfile?.latitude ?? null;
       const myLng = myProfile?.longitude ?? null;
@@ -200,18 +205,22 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
           return true;
         });
 
-      const withPhoto = formattedProfiles.filter(p => p.profile_photo_url);
-      const withoutPhoto = formattedProfiles.filter(p => !p.profile_photo_url);
+      // Cacher complètement les profils sans photo valide
+      const hasValidPhoto = (p: typeof formattedProfiles[0]) => {
+        const url = p.profile_photo_url;
+        const urlValid = url && url !== 'null' && url !== 'undefined' && url.trim() !== '';
+        const photosValid = Array.isArray(p.photos) && p.photos.length > 0;
+        return urlValid || photosValid;
+      };
+      const withPhotoProfiles = formattedProfiles.filter(hasValidPhoto);
 
-      // Sans photo uniquement après 3 tours complets des profils avec photo
-      const photoSwipeKey = `discovery_photo_swipes_${user.id}`;
-      const photoSwipeCount = parseInt(localStorage.getItem(photoSwipeKey) || '0');
-      const threshold = withPhoto.length * 3;
-      const showWithoutPhoto = withPhoto.length === 0 || photoSwipeCount >= threshold;
-      const mixed = showWithoutPhoto ? [...withPhoto, ...withoutPhoto] : withPhoto;
+      // Profils jamais passés en premier, profils passés à la fin
+      const freshProfiles = withPhotoProfiles.filter(p => !passedIds.has(p.id));
+      const passedProfiles = withPhotoProfiles.filter(p => passedIds.has(p.id));
+      const mixed = [...freshProfiles, ...passedProfiles];
 
       console.log(`\n📊 FILTRE DISCOVERY — Mon genre: ${myProfile.gender || 'non défini'}`);
-      console.log(`✅ Avec photo: ${withPhoto.length} | Sans photo: ${withoutPhoto.length} | Total: ${mixed.length} | Swipes photo: ${photoSwipeCount}/${threshold} | Sans photo visibles: ${showWithoutPhoto}`);
+      console.log(`✅ Avec photo: ${mixed.length} | Total filtré: ${formattedProfiles.length}`);
 
       if (formattedProfiles.length === 0) {
         console.log('⚠️ Aucun profil ne correspond');
@@ -219,11 +228,11 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
         console.log('💡 Mon objectif:', myProfile.relationship_goal || 'non défini');
       }
 
-      // Reprendre là où on s'était arrêté
+      // Reprendre là où on s'était arrêté (chercher dans mixed, pas formattedProfiles)
       const lastSeenId = localStorage.getItem(`discovery_last_seen_${user.id}`);
       if (lastSeenId) {
-        const lastIndex = formattedProfiles.findIndex(p => p.id === lastSeenId);
-        if (lastIndex !== -1 && lastIndex + 1 < formattedProfiles.length) {
+        const lastIndex = mixed.findIndex(p => p.id === lastSeenId);
+        if (lastIndex !== -1 && lastIndex + 1 < mixed.length) {
           setCurrentProfileIndex(lastIndex + 1);
         }
       }
@@ -259,12 +268,6 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
     }
 
     // Incrémenter le compteur si le profil a une photo
-    if (currentProfile.profile_photo_url) {
-      const key = `discovery_photo_swipes_${userId}`;
-      const count = parseInt(localStorage.getItem(key) || '0');
-      localStorage.setItem(key, String(count + 1));
-    }
-
     setIsAnimating(true);
 
     try {
@@ -528,7 +531,7 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
               image:
                 currentProfile.photos?.length > 0
                   ? currentProfile.photos
-                  : currentProfile.profile_photo_url
+                  : (currentProfile.profile_photo_url && currentProfile.profile_photo_url !== 'null')
                   ? [currentProfile.profile_photo_url]
                   : [],
               interests: currentProfile.interests || [],

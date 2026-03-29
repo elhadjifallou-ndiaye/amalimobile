@@ -59,11 +59,28 @@ export default function ProfileCompletion({ userId, onComplete, onSkipForNow }: 
     if (!userId) return;
     supabase
       .from('profiles')
-      .select('profile_photo_url')
+      .select('profile_photo_url, name, date_of_birth, gender, location, bio, profession, education_level, height, prayer_frequency, relationship_goal, hijab_wear, polygamy_stance, interests')
       .eq('id', userId)
       .single()
       .then(({ data }) => {
-        if (data?.profile_photo_url) setExistingPhotoUrl(data.profile_photo_url);
+        if (!data) return;
+        if (data.profile_photo_url) setExistingPhotoUrl(data.profile_photo_url);
+        setProfileData(prev => ({
+          ...prev,
+          name: data.name || prev.name,
+          dateOfBirth: data.date_of_birth || prev.dateOfBirth,
+          gender: data.gender && data.gender !== 'null' && data.gender !== 'undefined' ? data.gender : prev.gender,
+          location: data.location || prev.location,
+          bio: data.bio || prev.bio,
+          profession: data.profession || prev.profession,
+          education: data.education_level || prev.education,
+          height: data.height ? String(data.height) : prev.height,
+          prayerFrequency: data.prayer_frequency || prev.prayerFrequency,
+          relationshipGoal: data.relationship_goal || prev.relationshipGoal,
+          hijabPreference: data.hijab_wear || prev.hijabPreference,
+          polygamyStance: data.polygamy_stance || prev.polygamyStance,
+          interests: Array.isArray(data.interests) && data.interests.length ? data.interests : prev.interests,
+        }));
       });
   }, [userId]);
 
@@ -241,6 +258,7 @@ export default function ProfileCompletion({ userId, onComplete, onSkipForNow }: 
 
       const updateData: any = {
         name: profileData.name,
+        profile_completed: true,
         updated_at: new Date().toISOString(),
       };
 
@@ -263,8 +281,7 @@ export default function ProfileCompletion({ userId, onComplete, onSkipForNow }: 
 
       const { error: updateError } = await supabase
         .from('profiles')
-        .update(updateData)
-        .eq('id', user.id);
+        .upsert({ id: user.id, email: user.email ?? '', ...updateData });
 
       if (updateError) throw updateError;
       
@@ -671,23 +688,14 @@ export default function ProfileCompletion({ userId, onComplete, onSkipForNow }: 
               ))}
 
               {profileData.photos.length < 6 && (
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
+                <label
+                  htmlFor="profile-photo-input"
                   className="aspect-square border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:border-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all"
                 >
                   <Upload className="w-8 h-8 text-slate-400 mb-2" />
                   <span className="text-xs text-slate-600 dark:text-slate-400">Ajouter</span>
-                </button>
+                </label>
               )}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handlePhotoUpload}
-                style={{ display: 'none' }}
-              />
             </div>
 
             <p className="text-sm text-slate-600 dark:text-slate-400 text-center">
@@ -698,6 +706,17 @@ export default function ProfileCompletion({ userId, onComplete, onSkipForNow }: 
           </div>
         </div>
       </div>
+
+      {/* Input file via label — fiable sur iOS/Capacitor */}
+      <input
+        id="profile-photo-input"
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        onChange={handlePhotoUpload}
+        style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
+      />
 
       {/* Footer - Fixed */}
       <div

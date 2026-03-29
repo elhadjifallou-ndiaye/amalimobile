@@ -10,13 +10,12 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [isDarkMode, setIsDarkMode] = useState(() => {
-    // Récupérer la préférence sauvegardée
     const saved = localStorage.getItem('amali-dark-mode');
     if (saved !== null) {
       return JSON.parse(saved);
     }
-    // Sinon, blanc par défaut
-    return false;
+    // Mode nuit par défaut
+    return true;
   });
 
   useEffect(() => {

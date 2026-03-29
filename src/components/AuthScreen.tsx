@@ -25,6 +25,7 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [cooldown, setCooldown] = useState(0);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -72,13 +73,25 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (cooldown > 0) return;
+    if (!isValidEmail(email)) { setError('Veuillez entrer une adresse email valide.'); return; }
     setLoading(true); setError('');
     const result = await authService.resetPassword(email);
     if (result.success) {
       setSuccess('Email envoyé ! Vérifiez votre boîte mail.');
-      setTimeout(() => { setMode('signin'); reset(); }, 3000);
+      // Cooldown 60s pour éviter les envois répétés
+      setCooldown(60);
+      const timer = setInterval(() => {
+        setCooldown(prev => { if (prev <= 1) { clearInterval(timer); return 0; } return prev - 1; });
+      }, 1000);
+      setTimeout(() => { setMode('signin'); reset(); }, 4000);
     } else {
-      setError(result.error || 'Erreur lors de la réinitialisation.');
+      const msg = result.error || '';
+      if (msg.toLowerCase().includes('rate') || msg.toLowerCase().includes('limit')) {
+        setError('Trop de tentatives. Veuillez patienter quelques minutes avant de réessayer.');
+      } else {
+        setError(msg || 'Erreur lors de la réinitialisation.');
+      }
     }
     setLoading(false);
   };
@@ -246,7 +259,9 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
                 />
               </Field>
 
-              <SubmitBtn loading={loading}>{loading ? 'Envoi...' : 'Envoyer le lien'}</SubmitBtn>
+              <SubmitBtn loading={loading || cooldown > 0}>
+                {loading ? 'Envoi...' : cooldown > 0 ? `Réessayer dans ${cooldown}s` : 'Envoyer le lien'}
+              </SubmitBtn>
             </form>
           )}
 

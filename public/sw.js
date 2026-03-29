@@ -1,4 +1,4 @@
-const CACHE_NAME = 'amali-v3';
+const CACHE_NAME = 'amali-v4';
 const urlsToCache = [
   '/',
   '/index.html',

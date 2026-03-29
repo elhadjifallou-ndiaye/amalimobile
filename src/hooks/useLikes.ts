@@ -21,12 +21,22 @@ interface LikesLimits {
   prestige_femme: { likes: number; superLikes: number; rewind: number };
 }
 
+// Likes gratuits selon la période de lancement (PDF)
+function getFreeLikesLimit(): number {
+  const now = new Date();
+  const apr6  = new Date('2026-04-06');
+  const apr30 = new Date('2026-04-30');
+  if (now < apr6)  return 25;
+  if (now < apr30) return 20;
+  return 15;
+}
+
 const LIMITS: LikesLimits = {
-  free: { likes: 30, superLikes: 1, rewind: 0 }, // ✅ 30 likes gratuits
-  essentiel: { likes: 80, superLikes: 5, rewind: 0 },
-  elite: { likes: 100, superLikes: 7, rewind: 3 },
-  prestige: { likes: 999999, superLikes: 20, rewind: 999999 }, // Illimité
-  prestige_femme: { likes: 999999, superLikes: 30, rewind: 0 }, // ✅ 30 super likes
+  free:          { likes: getFreeLikesLimit(), superLikes: 0, rewind: 0 },
+  essentiel:     { likes: 30,     superLikes: 3,  rewind: 0 },
+  elite:         { likes: 100,    superLikes: 10, rewind: 0 },
+  prestige:      { likes: 999999, superLikes: 15, rewind: 999999 },
+  prestige_femme:{ likes: 999999, superLikes: 15, rewind: 0 },
 };
 
 export const useLikes = (userId: string) => {
