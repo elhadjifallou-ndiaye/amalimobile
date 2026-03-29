@@ -49,6 +49,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }: PaymentModalP
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [paymentUrl, setPaymentUrl] = useState('');
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -116,11 +117,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }: PaymentModalP
         return;
       }
 
-      // Ouvrir la page de paiement PayDunya dans un nouvel onglet
-      if (result.paymentUrl) {
-        window.open(result.paymentUrl, '_blank', 'noopener,noreferrer');
-      }
-
+      if (result.paymentUrl) setPaymentUrl(result.paymentUrl);
       setStep('polling');
       startPolling(result.transactionRef);
     } catch {
@@ -279,11 +276,22 @@ export default function PaymentModal({ plan, onClose, onSuccess }: PaymentModalP
 
         {/* ── ÉTAPE 4 : Attente de confirmation ── */}
         {step === 'polling' && (
-          <div className="flex flex-col items-center justify-center h-64 gap-6 text-center">
-            <div className="relative">
-              <div className="w-16 h-16 rounded-full border-4 border-rose-200 dark:border-rose-900 animate-pulse" />
+          <div className="flex flex-col items-center justify-center gap-6 text-center py-10">
+            {/* Bouton payer — fonctionne sur mobile et desktop */}
+            {paymentUrl && (
+              <a
+                href={paymentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-4 bg-gradient-to-r from-rose-500 to-amber-600 text-white rounded-2xl font-semibold text-center shadow-lg hover:from-rose-600 hover:to-amber-700 transition-all"
+              >
+                Ouvrir la page de paiement →
+              </a>
+            )}
+            <div className="relative mt-2">
+              <div className="w-14 h-14 rounded-full border-4 border-rose-200 dark:border-rose-900 animate-pulse" />
               <div className="absolute inset-0 flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-rose-500 animate-spin" />
+                <Loader2 className="w-7 h-7 text-rose-500 animate-spin" />
               </div>
             </div>
             <div>
@@ -291,7 +299,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }: PaymentModalP
                 En attente de confirmation
               </p>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Complétez le paiement dans l'onglet ouvert, puis revenez ici
+                Payez sur la page PayDunya, puis revenez ici
               </p>
             </div>
           </div>
