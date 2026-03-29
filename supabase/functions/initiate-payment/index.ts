@@ -4,12 +4,10 @@
 //
 // Deploy : supabase functions deploy initiate-payment --no-verify-jwt
 // Secrets : PAYDUNYA_MASTER_KEY, PAYDUNYA_PRIVATE_KEY,
-//           PAYDUNYA_TOKEN, PAYDUNYA_PUBLIC_KEY, PAYDUNYA_MODE
+//           PAYDUNYA_TOKEN, PAYDUNYA_MODE
 // ============================================================
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
-
-// ─── Catalogue des plans (source de vérité côté serveur) ─────
 
 const PLAN_AMOUNTS: Record<string, number> = {
   amaliessentielv2:     2900,
@@ -35,8 +33,6 @@ const PLAN_TIERS: Record<string, string> = {
   amalivipbadge:        'vip-badge',
 };
 
-// ─── CORS ────────────────────────────────────────────────────
-
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, content-type, x-client-info, apikey',
@@ -50,49 +46,46 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-// ─── Helper PayDunya ─────────────────────────────────────────
-
 function get_mode(): string {
   return Deno.env.get('PAYDUNYA_MODE') ?? 'test';
+}
+
+function paydunya_base(): string {
+  // IMPORTANT: endpoint correct = /checkout-invoice/create (pas /softorder)
+  return get_mode() === 'live'
+    ? 'https://app.paydunya.com/api/v1/checkout-invoice/create'
+    : 'https://app.paydunya.com/sandbox-api/v1/checkout-invoice/create';
+}
+
+function paydunya_verify_base(token: string): string {
+  return get_mode() === 'live'
+    ? `https://app.paydunya.com/api/v1/checkout-invoice/confirm/${token}`
+    : `https://app.paydunya.com/sandbox-api/v1/checkout-invoice/confirm/${token}`;
 }
 
 function paydunya_headers() {
   const mode = get_mode();
   const masterKey  = mode === 'live' ? Deno.env.get('PAYDUNYA_MASTER_KEY_LIVE')  : Deno.env.get('PAYDUNYA_MASTER_KEY');
   const privateKey = mode === 'live' ? Deno.env.get('PAYDUNYA_PRIVATE_KEY_LIVE') : Deno.env.get('PAYDUNYA_PRIVATE_KEY');
-  const token      = mode === 'live' ? Deno.env.get('PAYDUNYA_TOKEN_LIVE')        : Deno.env.get('PAYDUNYA_TOKEN');
+  const apiToken   = mode === 'live' ? Deno.env.get('PAYDUNYA_TOKEN_LIVE')        : Deno.env.get('PAYDUNYA_TOKEN');
 
-  if (!masterKey || !privateKey || !token) {
-    throw new Error(`Missing PayDunya secrets for mode=${mode}`);
+  if (!masterKey || !privateKey || !apiToken) {
+    throw new Error(`Secrets PayDunya manquants pour mode=${mode} (master=${!!masterKey} private=${!!privateKey} token=${!!apiToken})`);
   }
 
   return {
     'Content-Type':         'application/json',
     'PAYDUNYA-MASTER-KEY':  masterKey,
     'PAYDUNYA-PRIVATE-KEY': privateKey,
-    'PAYDUNYA-TOKEN':       token,
+    'PAYDUNYA-TOKEN':       apiToken,
   };
 }
 
-function paydunya_base(): string {
-  return get_mode() === 'live'
-    ? 'https://app.paydunya.com/api/v1'
-    : 'https://app.paydunya.com/sandbox-api/v1';
-}
-
-// ─── Handler ─────────────────────────────────────────────────
-
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: CORS });
-  }
-
-  if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405, headers: CORS });
-  }
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+  if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: CORS });
 
   try {
-    // Vérifier que l'utilisateur est authentifié
     const authHeader = req.headers.get('authorization') ?? '';
     if (!authHeader.startsWith('Bearer ')) {
       return json({ error: 'Non authentifié' }, 401);
@@ -103,19 +96,12 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    // Vérifier le JWT utilisateur
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) {
-      return json({ error: 'Token invalide' }, 401);
-    }
+    if (authError || !user) return json({ error: 'Token invalide' }, 401);
 
     let body: Record<string, unknown>;
-    try {
-      body = await req.json();
-    } catch {
-      return json({ error: 'JSON invalide' }, 400);
-    }
+    try { body = await req.json(); } catch { return json({ error: 'JSON invalide' }, 400); }
 
     const planId         = body['planId'] as string;
     const method         = body['method'] as string;
@@ -123,35 +109,30 @@ Deno.serve(async (req: Request) => {
     const email          = body['email'] as string;
     const transactionRef = body['transactionRef'] as string;
 
-    // Valider le plan côté serveur
     const amount   = PLAN_AMOUNTS[planId];
     const planName = PLAN_NAMES[planId];
     const planTier = PLAN_TIERS[planId];
 
-    if (!amount || !planName) {
-      return json({ error: 'Plan inconnu' }, 400);
-    }
-
+    if (!amount || !planName) return json({ error: 'Plan inconnu' }, 400);
     if (!transactionRef || !transactionRef.startsWith('AMALI-')) {
-      return json({ error: 'Référence de transaction invalide' }, 400);
+      return json({ error: 'Référence transaction invalide' }, 400);
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const ipnUrl = `${supabaseUrl}/functions/v1/payment-webhook`;
 
-    // Construire le body PayDunya
     const paydunya_body = {
       invoice: {
         total_amount: amount,
-        description: `Abonnement Amali ${planName} — 30 jours`,
+        description:  `Abonnement Amali ${planName}`,
       },
       store: {
-        name: 'Amali',
-        tagline: "Rencontres halal en Afrique de l'Ouest",
+        name:           'Amali',
+        tagline:        "Rencontres halal en Afrique de l'Ouest",
         postal_address: 'Dakar, Sénégal',
-        phone: '+221000000000',
-        logo_url: 'https://amali.love/logo.png',
-        website_url: 'https://amali.love',
+        phone:          '+221000000000',
+        logo_url:       'https://amali.love/logo.png',
+        website_url:    'https://amali.love',
       },
       actions: {
         cancel_url:   `https://amali.love/payment/cancel?ref=${transactionRef}`,
@@ -168,40 +149,38 @@ Deno.serve(async (req: Request) => {
       },
     };
 
-    // Créer la facture chez PayDunya
+    // Appel PayDunya — endpoint correct : /checkout-invoice/create
     let paydunya_res: Response;
     try {
-      paydunya_res = await fetch(`${paydunya_base()}/checkout-invoice/create`, {
-        method: 'POST',
+      paydunya_res = await fetch(paydunya_base(), {
+        method:  'POST',
         headers: paydunya_headers(),
-        body: JSON.stringify(paydunya_body),
+        body:    JSON.stringify(paydunya_body),
       });
     } catch (err) {
-      console.error('Erreur réseau PayDunya:', err);
-      return json({ error: 'Impossible de contacter PayDunya' }, 502);
+      console.error('Réseau PayDunya:', err);
+      return json({ error: 'Impossible de contacter PayDunya', details: String(err) }, 502);
     }
 
+    // Parse JSON — PayDunya peut renvoyer du HTML si endpoint faux (404)
     let paydunya_data: Record<string, unknown>;
     try {
       paydunya_data = await paydunya_res.json();
     } catch {
-      const text = await paydunya_res.text().catch(() => '(unreadable)');
-      console.error('PayDunya non-JSON response:', text.substring(0, 200));
-      return json({ error: 'Réponse invalide de PayDunya' }, 502);
+      const txt = await paydunya_res.text().catch(() => '');
+      console.error(`PayDunya réponse non-JSON (status=${paydunya_res.status}):`, txt.substring(0, 300));
+      return json({ error: `PayDunya a répondu ${paydunya_res.status} non-JSON (endpoint invalide ?)` }, 502);
     }
+
+    console.log('PayDunya réponse:', JSON.stringify(paydunya_data));
 
     if (paydunya_data['response_code'] !== '00') {
-      console.error('PayDunya error:', JSON.stringify(paydunya_data));
-      return json({
-        error: String(paydunya_data['response_text'] ?? 'Erreur PayDunya'),
-        debug: paydunya_data,
-      }, 400);
+      return json({ error: String(paydunya_data['response_text'] ?? 'Erreur PayDunya'), debug: paydunya_data }, 400);
     }
 
-    // response_text contient l'URL de paiement quand response_code === '00'
-    const paymentUrl: string = String(paydunya_data['response_text'] ?? '');
+    // response_text = URL de la page de paiement hébergée
+    const paymentUrl = String(paydunya_data['response_text'] ?? '');
 
-    // Insérer la ligne pending dans payments
     const { error: dbError } = await supabase.from('payments').insert({
       user_id:         user.id,
       transaction_ref: transactionRef,
@@ -216,15 +195,14 @@ Deno.serve(async (req: Request) => {
     });
 
     if (dbError) {
-      console.error('DB insert error:', dbError);
+      console.error('DB insert error:', dbError.message);
       return json({ error: 'Erreur base de données', details: dbError.message }, 500);
     }
 
     return json({ payment_url: paymentUrl, transaction_ref: transactionRef });
 
   } catch (err) {
-    // Top-level catch: garantit que la réponse a toujours les headers CORS
-    console.error('Unhandled error in initiate-payment:', err);
+    console.error('Erreur non gérée initiate-payment:', err);
     return json({ error: 'Erreur interne', details: String(err) }, 500);
   }
 });
