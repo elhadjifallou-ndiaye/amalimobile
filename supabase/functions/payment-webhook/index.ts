@@ -5,7 +5,7 @@
 // URL à configurer sur PayDunya :
 //   https://coytzhvhksalobmdnzwr.supabase.co/functions/v1/payment-webhook
 //
-// Deploy : supabase functions deploy payment-webhook
+// Deploy : supabase functions deploy payment-webhook --no-verify-jwt
 // Secrets : PAYDUNYA_MASTER_KEY, PAYDUNYA_PRIVATE_KEY,
 //           PAYDUNYA_TOKEN, PAYDUNYA_MODE, MOCK_ENABLED
 // ============================================================
@@ -62,7 +62,6 @@ function json(data: unknown, status = 200): Response {
 }
 
 // ─── Vérification PayDunya (appel direct à leur API) ─────────
-// Plus sûr que HMAC : on vérifie le statut directement chez PayDunya.
 
 async function verifyWithPaydunya(invoiceToken: string): Promise<{
   verified: boolean;
@@ -75,17 +74,20 @@ async function verifyWithPaydunya(invoiceToken: string): Promise<{
     ? 'https://app.paydunya.com/api/v1'
     : 'https://app.paydunya.com/sandbox-api/v1';
 
+  const masterKey  = mode === 'live' ? Deno.env.get('PAYDUNYA_MASTER_KEY_LIVE')  : Deno.env.get('PAYDUNYA_MASTER_KEY');
+  const privateKey = mode === 'live' ? Deno.env.get('PAYDUNYA_PRIVATE_KEY_LIVE') : Deno.env.get('PAYDUNYA_PRIVATE_KEY');
+  const token      = mode === 'live' ? Deno.env.get('PAYDUNYA_TOKEN_LIVE')        : Deno.env.get('PAYDUNYA_TOKEN');
+
+  if (!masterKey || !privateKey || !token) {
+    console.error(`Missing PayDunya secrets for mode=${mode}`);
+    return { verified: false, status: 'error', amount: 0, customData: {} };
+  }
+
   const res = await fetch(`${base}/softorder/check-status/${invoiceToken}`, {
     headers: {
-      'PAYDUNYA-MASTER-KEY':  mode === 'live'
-        ? Deno.env.get('PAYDUNYA_MASTER_KEY_LIVE')!
-        : Deno.env.get('PAYDUNYA_MASTER_KEY')!,
-      'PAYDUNYA-PRIVATE-KEY': mode === 'live'
-        ? Deno.env.get('PAYDUNYA_PRIVATE_KEY_LIVE')!
-        : Deno.env.get('PAYDUNYA_PRIVATE_KEY')!,
-      'PAYDUNYA-TOKEN':       mode === 'live'
-        ? Deno.env.get('PAYDUNYA_TOKEN_LIVE')!
-        : Deno.env.get('PAYDUNYA_TOKEN')!,
+      'PAYDUNYA-MASTER-KEY':  masterKey,
+      'PAYDUNYA-PRIVATE-KEY': privateKey,
+      'PAYDUNYA-TOKEN':       token,
     },
   });
 
@@ -113,65 +115,62 @@ Deno.serve(async (req: Request) => {
     return new Response('Method not allowed', { status: 405, headers: CORS });
   }
 
-  const bodyText = await req.text();
-  let payload: Record<string, unknown>;
   try {
-    payload = JSON.parse(bodyText);
-  } catch {
-    return json({ error: 'JSON invalide' }, 400);
-  }
-
-  // ── Mode mock (tests locaux) ──────────────────────────────────
-  const isMockBypass = req.headers.get('x-webhook-signature') === 'mock-bypass';
-  if (isMockBypass) {
-    if (Deno.env.get('MOCK_ENABLED') === 'false') {
-      return json({ error: 'Mock désactivé' }, 403);
+    const bodyText = await req.text();
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(bodyText);
+    } catch {
+      return json({ error: 'JSON invalide' }, 400);
     }
-    // En mode mock, transaction_ref et payment_status sont dans le payload directement
-    const transactionRef = payload['transaction_ref'] as string;
-    const status = payload['payment_status'] as string;
-    if (!transactionRef || status !== 'mock-success') {
-      return json({ error: 'Payload mock invalide' }, 400);
+
+    // ── Mode mock (tests locaux) ──────────────────────────────────
+    const isMockBypass = req.headers.get('x-webhook-signature') === 'mock-bypass';
+    if (isMockBypass) {
+      if (Deno.env.get('MOCK_ENABLED') === 'false') {
+        return json({ error: 'Mock désactivé' }, 403);
+      }
+      const transactionRef = payload['transaction_ref'] as string;
+      const status = payload['payment_status'] as string;
+      if (!transactionRef || status !== 'mock-success') {
+        return json({ error: 'Payload mock invalide' }, 400);
+      }
+      return await activatePremium(transactionRef, null, payload);
     }
-    return await activatePremium(transactionRef, null, payload);
+
+    // ── IPN PayDunya ──────────────────────────────────────────────
+    const data = payload['data'] as Record<string, unknown> | undefined;
+    if (!data) return json({ error: 'Payload invalide' }, 400);
+
+    const invoice    = data['invoice']     as Record<string, unknown> | undefined;
+    const customData = data['custom_data'] as Record<string, string>  | undefined;
+
+    const invoiceToken   = invoice?.['token']               as string | undefined;
+    const transactionRef = customData?.['transaction_ref']  as string | undefined;
+
+    if (!invoiceToken || !transactionRef) {
+      return json({ error: 'token ou transaction_ref manquant' }, 400);
+    }
+
+    // Vérifier directement chez PayDunya
+    const verification = await verifyWithPaydunya(invoiceToken);
+
+    if (!verification.verified) {
+      return json({ error: 'Vérification PayDunya échouée' }, 502);
+    }
+
+    if (verification.status !== 'completed') {
+      console.log(`IPN reçu avec status=${verification.status} pour ref=${transactionRef}`);
+      return json({ status: verification.status });
+    }
+
+    return await activatePremium(transactionRef, verification.amount, payload);
+
+  } catch (err) {
+    // Top-level catch: garantit que la réponse a toujours les headers CORS
+    console.error('Unhandled error in payment-webhook:', err);
+    return json({ error: 'Erreur interne', details: String(err) }, 500);
   }
-
-  // ── IPN PayDunya ──────────────────────────────────────────────
-  // Payload PayDunya :
-  // {
-  //   "data": {
-  //     "status": "completed",
-  //     "invoice": { "token": "xxx", "total_amount": 4900 },
-  //     "custom_data": { "transaction_ref": "AMALI-xxx", ... }
-  //   }
-  // }
-
-  const data = payload['data'] as Record<string, unknown> | undefined;
-  if (!data) return json({ error: 'Payload invalide' }, 400);
-
-  const invoice    = data['invoice']     as Record<string, unknown> | undefined;
-  const customData = data['custom_data'] as Record<string, string>  | undefined;
-
-  const invoiceToken   = invoice?.['token']        as string | undefined;
-  const transactionRef = customData?.['transaction_ref'] as string | undefined;
-
-  if (!invoiceToken || !transactionRef) {
-    return json({ error: 'token ou transaction_ref manquant' }, 400);
-  }
-
-  // Vérifier directement chez PayDunya (ne jamais faire confiance au payload seul)
-  const verification = await verifyWithPaydunya(invoiceToken);
-
-  if (!verification.verified) {
-    return json({ error: 'Vérification PayDunya échouée' }, 502);
-  }
-
-  if (verification.status !== 'completed') {
-    console.log(`IPN reçu avec status=${verification.status} pour ref=${transactionRef}`);
-    return json({ status: verification.status });
-  }
-
-  return await activatePremium(transactionRef, verification.amount, payload);
 });
 
 // ─── Activation premium (partagée mock + IPN réel) ───────────
@@ -203,7 +202,7 @@ async function activatePremium(
     return json({ status: 'already_processed' });
   }
 
-  // Vérification du montant (protection contre underpayment)
+  // Vérification du montant
   const expectedAmount = PLAN_AMOUNTS[payment.plan_id];
   if (!expectedAmount) {
     return json({ error: 'plan_id inconnu' }, 400);
@@ -216,7 +215,7 @@ async function activatePremium(
     return json({ error: 'Montant insuffisant' }, 400);
   }
 
-  const planTier    = PLAN_TIERS[payment.plan_id];
+  const planTier     = PLAN_TIERS[payment.plan_id];
   const durationDays = PLAN_DURATION_DAYS[payment.plan_id] ?? 30;
   const activatedAt  = new Date();
   const expiresAt    = new Date(activatedAt.getTime() + durationDays * 86400_000);
@@ -232,20 +231,20 @@ async function activatePremium(
 
   if (payErr) {
     console.error('Erreur update payment:', payErr);
-    return json({ error: 'DB error' }, 500);
+    return json({ error: 'DB error', details: payErr.message }, 500);
   }
 
   // 2. Activer le premium sur le profil
   const { error: profileErr } = await supabase.from('profiles').update({
-    is_premium:          true,
-    premium_tier:        planTier,
-    premium_expires_at:  expiresAt.toISOString(),
-    updated_at:          activatedAt.toISOString(),
+    is_premium:         true,
+    premium_tier:       planTier,
+    premium_expires_at: expiresAt.toISOString(),
+    updated_at:         activatedAt.toISOString(),
   }).eq('id', payment.user_id);
 
   if (profileErr) {
     console.error('Erreur update profile:', profileErr);
-    return json({ error: 'Profile update failed' }, 500);
+    return json({ error: 'Profile update failed', details: profileErr.message }, 500);
   }
 
   // 3. Notification
