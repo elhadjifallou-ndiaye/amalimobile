@@ -1,10 +1,9 @@
 // ============================================================
 // supabase/functions/initiate-payment/index.ts
-// Crée une facture PayDunya et retourne l'URL de paiement.
+// Crée un paiement PayTech et retourne l'URL de checkout.
 //
 // Deploy : supabase functions deploy initiate-payment --no-verify-jwt
-// Secrets : PAYDUNYA_MASTER_KEY, PAYDUNYA_PRIVATE_KEY,
-//           PAYDUNYA_TOKEN, PAYDUNYA_MODE
+// Secrets : PAYTECH_API_KEY, PAYTECH_API_SECRET, PAYTECH_ENV
 // ============================================================
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
@@ -46,50 +45,13 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-function get_mode(): string {
-  return Deno.env.get('PAYDUNYA_MODE') ?? 'test';
-}
-
-function paydunya_base(): string {
-  // IMPORTANT: endpoint correct = /checkout-invoice/create (pas /softorder)
-  return get_mode() === 'live'
-    ? 'https://app.paydunya.com/api/v1/checkout-invoice/create'
-    : 'https://app.paydunya.com/sandbox-api/v1/checkout-invoice/create';
-}
-
-function paydunya_verify_base(token: string): string {
-  return get_mode() === 'live'
-    ? `https://app.paydunya.com/api/v1/checkout-invoice/confirm/${token}`
-    : `https://app.paydunya.com/sandbox-api/v1/checkout-invoice/confirm/${token}`;
-}
-
-function paydunya_headers() {
-  const mode = get_mode();
-  const masterKey  = mode === 'live' ? Deno.env.get('PAYDUNYA_MASTER_KEY_LIVE')  : Deno.env.get('PAYDUNYA_MASTER_KEY');
-  const privateKey = mode === 'live' ? Deno.env.get('PAYDUNYA_PRIVATE_KEY_LIVE') : Deno.env.get('PAYDUNYA_PRIVATE_KEY');
-  const apiToken   = mode === 'live' ? Deno.env.get('PAYDUNYA_TOKEN_LIVE')        : Deno.env.get('PAYDUNYA_TOKEN');
-
-  if (!masterKey || !privateKey || !apiToken) {
-    throw new Error(`Secrets PayDunya manquants pour mode=${mode} (master=${!!masterKey} private=${!!privateKey} token=${!!apiToken})`);
-  }
-
-  return {
-    'Content-Type':         'application/json',
-    'PAYDUNYA-MASTER-KEY':  masterKey,
-    'PAYDUNYA-PRIVATE-KEY': privateKey,
-    'PAYDUNYA-TOKEN':       apiToken,
-  };
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: CORS });
 
   try {
     const authHeader = req.headers.get('authorization') ?? '';
-    if (!authHeader.startsWith('Bearer ')) {
-      return json({ error: 'Non authentifié' }, 401);
-    }
+    if (!authHeader.startsWith('Bearer ')) return json({ error: 'Non authentifié' }, 401);
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -114,82 +76,83 @@ Deno.serve(async (req: Request) => {
     const planTier = PLAN_TIERS[planId];
 
     if (!amount || !planName) return json({ error: 'Plan inconnu' }, 400);
-    if (!transactionRef || !transactionRef.startsWith('AMALI-')) {
-      return json({ error: 'Référence transaction invalide' }, 400);
+    if (!transactionRef?.startsWith('AMALI-')) return json({ error: 'Référence invalide' }, 400);
+
+    const apiKey    = Deno.env.get('PAYTECH_API_KEY');
+    const apiSecret = Deno.env.get('PAYTECH_API_SECRET');
+    const env       = Deno.env.get('PAYTECH_ENV') ?? 'prod';
+
+    if (!apiKey || !apiSecret) {
+      return json({ error: 'Clés PayTech manquantes' }, 500);
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const ipnUrl = `${supabaseUrl}/functions/v1/payment-webhook`;
+    const ipnUrl      = `${supabaseUrl}/functions/v1/payment-webhook`;
 
-    const paydunya_body = {
-      invoice: {
-        total_amount: amount,
-        description:  `Abonnement Amali ${planName}`,
-      },
-      store: {
-        name:           'Amali',
-        tagline:        "Rencontres halal en Afrique de l'Ouest",
-        postal_address: 'Dakar, Sénégal',
-        phone:          '+221000000000',
-        logo_url:       'https://amali.love/logo.png',
-        website_url:    'https://amali.love',
-      },
-      actions: {
-        cancel_url:   `https://amali.love/payment/cancel?ref=${transactionRef}`,
-        return_url:   `https://amali.love/payment/success?ref=${transactionRef}`,
-        callback_url: ipnUrl,
-      },
-      custom_data: {
-        transaction_ref: transactionRef,
-        user_id:         user.id,
-        plan_id:         planId,
-        plan_tier:       planTier,
-        method:          method,
-        phone:           phone ?? null,
-      },
+    const customField = JSON.stringify({
+      transaction_ref: transactionRef,
+      user_id:         user.id,
+      plan_id:         planId,
+      plan_tier:       planTier,
+      method,
+      phone: phone ?? null,
+    });
+
+    const paytechBody = {
+      item_name:    `Amali ${planName}`,
+      item_price:   amount,
+      currency:     'XOF',
+      ref_command:  transactionRef,
+      command_name: `Abonnement Amali ${planName}`,
+      env,
+      ipn_url:      ipnUrl,
+      success_url:  `https://amali.love/payment/success?ref=${transactionRef}`,
+      cancel_url:   `https://amali.love/payment/cancel?ref=${transactionRef}`,
+      custom_field: customField,
     };
 
-    // Appel PayDunya — endpoint correct : /checkout-invoice/create
-    let paydunya_res: Response;
+    let ptRes: Response;
     try {
-      paydunya_res = await fetch(paydunya_base(), {
-        method:  'POST',
-        headers: paydunya_headers(),
-        body:    JSON.stringify(paydunya_body),
+      ptRes = await fetch('https://paytech.sn/api/payment/request-payment', {
+        method: 'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'API_KEY':        apiKey,
+          'API_SECRET':     apiSecret,
+        },
+        body: JSON.stringify(paytechBody),
       });
     } catch (err) {
-      console.error('Réseau PayDunya:', err);
-      return json({ error: 'Impossible de contacter PayDunya', details: String(err) }, 502);
+      console.error('Réseau PayTech:', err);
+      return json({ error: 'Impossible de contacter PayTech', details: String(err) }, 502);
     }
 
-    // Parse JSON — PayDunya peut renvoyer du HTML si endpoint faux (404)
-    let paydunya_data: Record<string, unknown>;
+    let ptData: Record<string, unknown>;
     try {
-      paydunya_data = await paydunya_res.json();
+      ptData = await ptRes.json();
     } catch {
-      const txt = await paydunya_res.text().catch(() => '');
-      console.error(`PayDunya réponse non-JSON (status=${paydunya_res.status}):`, txt.substring(0, 300));
-      return json({ error: `PayDunya a répondu ${paydunya_res.status} non-JSON (endpoint invalide ?)` }, 502);
+      const txt = await ptRes.text().catch(() => '');
+      console.error(`PayTech réponse non-JSON (${ptRes.status}):`, txt.substring(0, 300));
+      return json({ error: `PayTech a répondu ${ptRes.status} non-JSON` }, 502);
     }
 
-    console.log('PayDunya réponse:', JSON.stringify(paydunya_data));
+    console.log('PayTech réponse:', JSON.stringify(ptData));
 
-    if (paydunya_data['response_code'] !== '00') {
-      return json({ error: String(paydunya_data['response_text'] ?? 'Erreur PayDunya'), debug: paydunya_data }, 400);
+    if (!ptData['success'] || ptData['success'] === 0) {
+      return json({ error: String(ptData['message'] ?? 'Erreur PayTech'), debug: ptData }, 400);
     }
 
-    // response_text = URL de la page de paiement hébergée
-    const paymentUrl = String(paydunya_data['response_text'] ?? '');
+    const paymentUrl = String(ptData['redirect_url'] ?? '');
 
     const { error: dbError } = await supabase.from('payments').insert({
       user_id:         user.id,
       transaction_ref: transactionRef,
       plan_id:         planId,
       plan_tier:       planTier,
-      amount:          amount,
-      method:          method,
+      amount,
+      method,
       phone:           phone ?? null,
-      email:           email,
+      email,
       status:          'pending',
       payment_url:     paymentUrl,
     });

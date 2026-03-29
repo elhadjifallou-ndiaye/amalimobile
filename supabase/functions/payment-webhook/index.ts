@@ -1,8 +1,8 @@
 // ============================================================
 // supabase/functions/payment-webhook/index.ts
-// IPN PayDunya — appelé automatiquement après chaque paiement.
+// IPN PayTech — appelé automatiquement après chaque paiement.
 //
-// URL IPN à configurer dans le dashboard PayDunya :
+// URL IPN à configurer dans le dashboard PayTech :
 //   https://coytzhvhksalobmdnzwr.supabase.co/functions/v1/payment-webhook
 //
 // Deploy : supabase functions deploy payment-webhook --no-verify-jwt
@@ -55,61 +55,6 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-function get_mode(): string {
-  return Deno.env.get('PAYDUNYA_MODE') ?? 'test';
-}
-
-// Vérification PayDunya — endpoint correct : /checkout-invoice/confirm/{token}
-async function verifyWithPaydunya(invoiceToken: string): Promise<{
-  verified:   boolean;
-  status:     string;
-  amount:     number;
-  customData: Record<string, string>;
-}> {
-  const mode = get_mode();
-  const base = mode === 'live'
-    ? 'https://app.paydunya.com/api/v1'
-    : 'https://app.paydunya.com/sandbox-api/v1';
-
-  const masterKey  = mode === 'live' ? Deno.env.get('PAYDUNYA_MASTER_KEY_LIVE')  : Deno.env.get('PAYDUNYA_MASTER_KEY');
-  const privateKey = mode === 'live' ? Deno.env.get('PAYDUNYA_PRIVATE_KEY_LIVE') : Deno.env.get('PAYDUNYA_PRIVATE_KEY');
-  const apiToken   = mode === 'live' ? Deno.env.get('PAYDUNYA_TOKEN_LIVE')        : Deno.env.get('PAYDUNYA_TOKEN');
-
-  if (!masterKey || !privateKey || !apiToken) {
-    console.error(`Secrets PayDunya manquants pour mode=${mode}`);
-    return { verified: false, status: 'error', amount: 0, customData: {} };
-  }
-
-  let res: Response;
-  try {
-    res = await fetch(`${base}/checkout-invoice/confirm/${invoiceToken}`, {
-      headers: {
-        'PAYDUNYA-MASTER-KEY':  masterKey,
-        'PAYDUNYA-PRIVATE-KEY': privateKey,
-        'PAYDUNYA-TOKEN':       apiToken,
-      },
-    });
-  } catch (err) {
-    console.error('Réseau PayDunya verify:', err);
-    return { verified: false, status: 'error', amount: 0, customData: {} };
-  }
-
-  let data: Record<string, unknown>;
-  try {
-    data = await res.json();
-  } catch {
-    console.error('PayDunya verify: réponse non-JSON, status=', res.status);
-    return { verified: false, status: 'error', amount: 0, customData: {} };
-  }
-
-  return {
-    verified:   true,
-    status:     String(data['status'] ?? 'unknown'),
-    amount:     Number((data['invoice'] as Record<string, unknown>)?.['total_amount'] ?? 0),
-    customData: (data['custom_data'] as Record<string, string>) ?? {},
-  };
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: CORS });
@@ -122,38 +67,25 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'JSON invalide' }, 400);
     }
 
-    // Mode mock (tests locaux)
-    const isMockBypass = req.headers.get('x-webhook-signature') === 'mock-bypass';
-    if (isMockBypass) {
-      if (Deno.env.get('MOCK_ENABLED') === 'false') return json({ error: 'Mock désactivé' }, 403);
-      const transactionRef = payload['transaction_ref'] as string;
-      const status = payload['payment_status'] as string;
-      if (!transactionRef || status !== 'mock-success') return json({ error: 'Payload mock invalide' }, 400);
-      return await activatePremium(transactionRef, null, payload);
+    console.log('IPN reçu:', JSON.stringify(payload));
+
+    // PayTech envoie type_event = "sale_complete" quand le paiement est validé
+    const typeEvent = payload['type_event'] as string | undefined;
+    if (typeEvent !== 'sale_complete') {
+      console.log(`IPN ignoré: type_event=${typeEvent}`);
+      return json({ status: 'ignored', type_event: typeEvent });
     }
 
-    // IPN PayDunya
-    const data       = payload['data']     as Record<string, unknown> | undefined;
-    if (!data) return json({ error: 'Payload invalide' }, 400);
-
-    const invoice    = data['invoice']     as Record<string, unknown> | undefined;
-    const customData = data['custom_data'] as Record<string, string>  | undefined;
-
-    const invoiceToken   = invoice?.['token']              as string | undefined;
-    const transactionRef = customData?.['transaction_ref'] as string | undefined;
-
-    if (!invoiceToken || !transactionRef) {
-      return json({ error: 'token ou transaction_ref manquant' }, 400);
+    // ref_command = notre transactionRef (AMALI-xxx)
+    const transactionRef = payload['ref_command'] as string | undefined;
+    if (!transactionRef?.startsWith('AMALI-')) {
+      return json({ error: 'ref_command invalide' }, 400);
     }
 
-    const verification = await verifyWithPaydunya(invoiceToken);
-    if (!verification.verified) return json({ error: 'Vérification PayDunya échouée' }, 502);
-    if (verification.status !== 'completed') {
-      console.log(`IPN status=${verification.status} ref=${transactionRef}`);
-      return json({ status: verification.status });
-    }
+    // Montant payé (en XOF)
+    const chargedAmount = Number(payload['item_price'] ?? 0);
 
-    return await activatePremium(transactionRef, verification.amount, payload);
+    return await activatePremium(transactionRef, chargedAmount, payload);
 
   } catch (err) {
     console.error('Erreur non gérée payment-webhook:', err);
@@ -163,7 +95,7 @@ Deno.serve(async (req: Request) => {
 
 async function activatePremium(
   transactionRef: string,
-  chargedAmount:  number | null,
+  chargedAmount:  number,
   rawPayload:     Record<string, unknown>
 ): Promise<Response> {
   const supabase = createClient(
@@ -179,12 +111,15 @@ async function activatePremium(
     return json({ error: 'Paiement introuvable' }, 404);
   }
 
+  // Idempotence
   if (payment.status === 'completed') return json({ status: 'already_processed' });
 
+  // Vérification montant
   const expectedAmount = PLAN_AMOUNTS[payment.plan_id];
   if (!expectedAmount) return json({ error: 'plan_id inconnu' }, 400);
 
-  if (chargedAmount !== null && chargedAmount < expectedAmount) {
+  if (chargedAmount > 0 && chargedAmount < expectedAmount) {
+    console.error(`Montant insuffisant: attendu=${expectedAmount} reçu=${chargedAmount}`);
     await supabase.from('payments')
       .update({ status: 'failed', webhook_payload: rawPayload, updated_at: new Date().toISOString() })
       .eq('transaction_ref', transactionRef);
