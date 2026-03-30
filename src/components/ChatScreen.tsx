@@ -37,8 +37,10 @@ export default function ChatScreen({ conversation, currentUserId, onBack }: Chat
   const [showProfile, setShowProfile] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [sendingImage, setSendingImage] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   const otherUserId = conversation.user1_id === currentUserId 
     ? conversation.user2_id 
@@ -322,6 +324,75 @@ export default function ChatScreen({ conversation, currentUserId, onBack }: Chat
     }
   };
 
+  const handleImageSend = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    setSendingImage(true);
+    const ext = file.name.split('.').pop() ?? 'jpg';
+    const path = `chat/${conversation.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('chat-images')
+      .upload(path, file, { contentType: file.type });
+
+    if (uploadError) {
+      console.error('Upload image:', uploadError.message);
+      setSendingImage(false);
+      return;
+    }
+
+    const { data: urlData } = supabase.storage.from('chat-images').getPublicUrl(path);
+    const mediaUrl = urlData.publicUrl;
+
+    const tempId = `temp-img-${Date.now()}`;
+    const tempMsg: Message = {
+      id: tempId,
+      conversation_id: conversation.id,
+      sender_id: currentUserId,
+      receiver_id: otherUserId,
+      content: '📷 Photo',
+      message_type: 'image',
+      media_url: mediaUrl,
+      is_read: false,
+      read_at: null,
+      created_at: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, tempMsg]);
+    scrollToBottom();
+
+    const { data: inserted, error: msgError } = await supabase
+      .from('messages')
+      .insert({
+        conversation_id: conversation.id,
+        sender_id: currentUserId,
+        receiver_id: otherUserId,
+        content: '📷 Photo',
+        message_type: 'image',
+        media_url: mediaUrl,
+      })
+      .select()
+      .single();
+
+    if (!msgError && inserted) {
+      setMessages(prev => prev.map(m => m.id === tempId ? inserted : m));
+
+      const unreadColumn = conversation.user1_id === currentUserId ? 'user2_unread_count' : 'user1_unread_count';
+      const { data: currentConv } = await supabase.from('conversations').select(unreadColumn).eq('id', conversation.id).single();
+      const currentUnread = (currentConv?.[unreadColumn as keyof typeof currentConv] as number | undefined) || 0;
+      await supabase.from('conversations').update({
+        last_message: '📷 Photo',
+        last_message_at: new Date().toISOString(),
+        [unreadColumn]: currentUnread + 1,
+      }).eq('id', conversation.id);
+    } else {
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+    }
+
+    setSendingImage(false);
+  };
+
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -514,24 +585,45 @@ export default function ChatScreen({ conversation, currentUserId, onBack }: Chat
                 isMe ? "justify-end" : "justify-start"
               )}>
                 <div className={cn(
-                  "max-w-[75%] rounded-2xl px-4 py-2.5",
-                  isMe 
-                    ? "bg-gradient-to-r from-rose-500 to-amber-500 text-white rounded-br-sm" 
+                  "max-w-[75%] rounded-2xl overflow-hidden",
+                  message.message_type === 'image' ? '' : 'px-4 py-2.5',
+                  isMe
+                    ? "bg-gradient-to-r from-rose-500 to-amber-500 text-white rounded-br-sm"
                     : "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-bl-sm",
                   isTemp && "opacity-70"
                 )}>
-                  <p className="text-sm whitespace-pre-wrap break-words">
-                    {message.content}
-                  </p>
-                  <div className={cn(
-                    "flex items-center gap-1 mt-1 text-xs",
-                    isMe ? "text-white/80 justify-end" : "text-slate-500 dark:text-slate-400"
-                  )}>
-                    <span>{formatMessageTime(message.created_at)}</span>
-                    {isMe && (
-                      <span>{isTemp ? '⏱' : message.is_read ? '✓✓' : '✓'}</span>
-                    )}
-                  </div>
+                  {message.message_type === 'image' && message.media_url ? (
+                    <div>
+                      <img
+                        src={message.media_url}
+                        alt="Photo"
+                        className="max-w-[240px] max-h-[320px] object-cover rounded-2xl"
+                        onClick={() => window.open(message.media_url!, '_blank')}
+                      />
+                      <div className={cn(
+                        "flex items-center gap-1 px-3 pb-2 pt-1 text-xs",
+                        isMe ? "text-white/80 justify-end" : "text-slate-500 dark:text-slate-400"
+                      )}>
+                        <span>{formatMessageTime(message.created_at)}</span>
+                        {isMe && <span>{isTemp ? '⏱' : message.is_read ? '✓✓' : '✓'}</span>}
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-sm whitespace-pre-wrap break-words">
+                        {message.content}
+                      </p>
+                      <div className={cn(
+                        "flex items-center gap-1 mt-1 text-xs",
+                        isMe ? "text-white/80 justify-end" : "text-slate-500 dark:text-slate-400"
+                      )}>
+                        <span>{formatMessageTime(message.created_at)}</span>
+                        {isMe && (
+                          <span>{isTemp ? '⏱' : message.is_read ? '✓✓' : '✓'}</span>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -562,9 +654,28 @@ export default function ChatScreen({ conversation, currentUserId, onBack }: Chat
         }}
       >
         <div className="flex items-center gap-2">
-          <button className="w-10 h-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center transition-colors flex-shrink-0">
-            <ImageIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-          </button>
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageSend}
+          />
+          <label
+            htmlFor="chat-image-input"
+            onClick={() => imageInputRef.current?.click()}
+            className={cn(
+              "w-10 h-10 rounded-full flex items-center justify-center transition-colors flex-shrink-0 cursor-pointer",
+              sendingImage
+                ? "bg-slate-200 dark:bg-slate-700"
+                : "hover:bg-slate-100 dark:hover:bg-slate-700"
+            )}
+          >
+            {sendingImage
+              ? <div className="w-4 h-4 border-2 border-rose-500 border-t-transparent rounded-full animate-spin" />
+              : <ImageIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+            }
+          </label>
 
           <div className="flex-1 bg-slate-100 dark:bg-slate-700 rounded-2xl px-4 h-10 flex items-center">
             <input
