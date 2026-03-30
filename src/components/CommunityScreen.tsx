@@ -80,6 +80,7 @@ export default function CommunityScreen({ notificationCount = 0, onNotificationC
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   // Modals natifs remplacés (window.prompt/confirm bloqués iOS PWA)
+  const [reportingPost, setReportingPost] = useState<Post | null>(null);
   const [reportingComment, setReportingComment] = useState<{ id: string; user_id: string } | null>(null);
   const [reportReason, setReportReason] = useState('');
   const [reportSubmitting, setReportSubmitting] = useState(false);
@@ -500,6 +501,12 @@ export default function CommunityScreen({ notificationCount = 0, onNotificationC
     }
   };
 
+  /* ---------- Signaler une publication ---------- */
+  const handleReportPost = (post: Post) => {
+    setReportReason('');
+    setReportingPost(post);
+  };
+
   /* ---------- Signaler un commentaire / réponse ---------- */
   const handleReportComment = (comment: Comment) => {
     setReportReason('');
@@ -507,18 +514,27 @@ export default function CommunityScreen({ notificationCount = 0, onNotificationC
   };
 
   const submitReport = async () => {
-    if (!reportReason.trim() || !userId || !reportingComment) return;
+    const isPost = !!reportingPost;
+    if (!reportReason.trim() || !userId || (!reportingPost && !reportingComment)) return;
     setReportSubmitting(true);
-    const { error } = await supabase.from('reports').insert({
+    const { error } = await supabase.from('reports').insert(isPost ? {
       reporter_id: userId,
-      reported_user_id: reportingComment.user_id,
+      reported_user_id: reportingPost!.user_id,
+      type: 'post',
+      post_id: reportingPost!.id,
+      reason: reportReason.trim(),
+      status: 'pending',
+    } : {
+      reporter_id: userId,
+      reported_user_id: reportingComment!.user_id,
       type: 'comment',
-      comment_id: reportingComment.id,
+      comment_id: reportingComment!.id,
       reason: reportReason.trim(),
       status: 'pending',
     });
     setReportSubmitting(false);
     if (error) { console.error('Report error:', error.message); return; }
+    setReportingPost(null);
     setReportingComment(null);
     setReportSuccess(true);
     setTimeout(() => setReportSuccess(false), 3000);
@@ -574,8 +590,8 @@ export default function CommunityScreen({ notificationCount = 0, onNotificationC
       )}
 
       {/* Modal signalement */}
-      {reportingComment && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={() => setReportingComment(null)}>
+      {(reportingPost || reportingComment) && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={() => { setReportingPost(null); setReportingComment(null); }}>
           <div className="bg-white dark:bg-slate-800 rounded-t-3xl p-5 w-full max-w-sm" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 80px)' }} onClick={e => e.stopPropagation()}>
             <div className="w-10 h-1 bg-slate-300 dark:bg-slate-600 rounded-full mx-auto mb-4" />
             <h3 className="text-base font-bold text-slate-900 dark:text-white mb-4 text-center">Pourquoi signalez-vous ?</h3>
@@ -739,6 +755,7 @@ export default function CommunityScreen({ notificationCount = 0, onNotificationC
                   userPhoto={userPhoto}
                   onDelete={() => handleDeletePost(post.id)}
                   onEdit={(newContent) => handleEditPost(post.id, newContent)}
+                  onReport={() => handleReportPost(post)}
                   onReportComment={(comment) => handleReportComment(comment)}
                   onLikeComment={(comment) => handleLikeComment(post.id, comment)}
                   onReplyComment={(parentComment, content) => handleReplyComment(post.id, parentComment, content)}
@@ -790,13 +807,14 @@ interface PostCardProps {
   userPhoto: string | null;
   onDelete: () => void;
   onEdit: (newContent: string) => void;
+  onReport: () => void;
   onReportComment: (comment: Comment) => void;
   onLikeComment: (comment: Comment) => void;
   onReplyComment: (parentComment: Comment, content: string) => void;
   currentUserId: string | null;
 }
 
-function PostCard({ post, isOwner, onLike, onToggleComments, showComments, comments, commentInput, onCommentChange, onCommentSubmit, commentSubmitting, userPhoto, onDelete, onEdit, onReportComment, onLikeComment, onReplyComment }: PostCardProps) {
+function PostCard({ post, isOwner, onLike, onToggleComments, showComments, comments, commentInput, onCommentChange, onCommentSubmit, commentSubmitting, userPhoto, onDelete, onEdit, onReport, onReportComment, onLikeComment, onReplyComment }: PostCardProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(post.content);
@@ -826,7 +844,7 @@ function PostCard({ post, isOwner, onLike, onToggleComments, showComments, comme
           <p className="font-semibold text-slate-900 dark:text-white text-sm">{post.author_name}</p>
           <p className="text-xs text-slate-400 dark:text-slate-500">{timeAgo(post.created_at)}</p>
         </div>
-        {isOwner && <div className="relative flex-shrink-0">
+        <div className="relative flex-shrink-0">
           <button
             onClick={() => setShowMenu(v => !v)}
             className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-slate-400"
@@ -837,7 +855,7 @@ function PostCard({ post, isOwner, onLike, onToggleComments, showComments, comme
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
               <div className="absolute right-0 top-9 z-20 bg-white dark:bg-slate-700 rounded-xl shadow-lg border border-slate-200 dark:border-slate-600 overflow-hidden min-w-[140px]">
-                {isOwner && (
+                {isOwner ? (
                   <>
                     <button
                       onClick={() => { setIsEditing(true); setEditContent(post.content); setShowMenu(false); }}
@@ -854,11 +872,19 @@ function PostCard({ post, isOwner, onLike, onToggleComments, showComments, comme
                       Supprimer
                     </button>
                   </>
+                ) : (
+                  <button
+                    onClick={() => { setShowMenu(false); onReport(); }}
+                    className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+                  >
+                    <Flag className="w-4 h-4" />
+                    Signaler
+                  </button>
                 )}
               </div>
             </>
           )}
-        </div>}
+        </div>
       </div>
 
       {/* Contenu */}
