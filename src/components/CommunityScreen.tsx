@@ -513,7 +513,7 @@ export default function CommunityScreen({ notificationCount = 0, onNotificationC
       reporter_id: userId,
       reported_user_id: reportingComment.user_id,
       type: 'comment',
-      post_id: reportingComment.id,
+      comment_id: reportingComment.id,
       reason: reportReason.trim(),
       status: 'pending',
     });
