@@ -2,28 +2,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Trash2, Star, Upload, Save, Loader2, MapPin, User } from 'lucide-react';
 import { supabase, AuthUser } from '@/lib/supabase';
-
-const compressImage = (file: File): Promise<Blob> =>
-  new Promise((resolve, reject) => {
-    const img = new Image();
-    const objectUrl = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      const MAX_DIM = 1920;
-      let { width, height } = img;
-      if (width > MAX_DIM || height > MAX_DIM) {
-        if (width > height) { height = Math.round(height * MAX_DIM / width); width = MAX_DIM; }
-        else { width = Math.round(width * MAX_DIM / height); height = MAX_DIM; }
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
-      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Compression échouée')), 'image/jpeg', 0.85);
-    };
-    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Image invalide')); };
-    img.src = objectUrl;
-  });
+import { compressImage } from '@/lib/imageUtils';
 
 interface EditProfileModalProps {
   user: AuthUser;
@@ -178,6 +157,9 @@ export default function EditProfileModal({ user, onClose, onSave }: EditProfileM
   const uploadNewPhotos = async (): Promise<string[]> => {
     const uploadedUrls: string[] = [];
 
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Session expirée, veuillez vous reconnecter.');
+
     for (const photo of photos) {
       if (photo.isNew && photo.file) {
         const compressed = await compressImage(photo.file);
@@ -187,7 +169,7 @@ export default function EditProfileModal({ user, onClose, onSave }: EditProfileM
           .from('profile-photos')
           .upload(fileName, compressed, {
             contentType: 'image/jpeg',
-            cacheControl: '3600',
+            cacheControl: '31536000',
             upsert: false,
           });
 

@@ -174,9 +174,6 @@ export const useLikes = (userId: string) => {
         })
         .eq('user_id', userId);
 
-      // Notifier l'utilisateur
-      alert(`🎁 Bonus connexion quotidienne : +${bonusLikes} likes !`);
-      
       await loadLikesData();
     } else {
       await supabase
@@ -190,7 +187,7 @@ export const useLikes = (userId: string) => {
   };
 
   // Consommer un like normal
-  // TODO: réactiver la logique premium quand le business sera configuré
+  // TODO: activer quand on est prêt
   const consumeLike = async (): Promise<boolean> => {
     return true; // Likes illimités pour tous (mode beta)
   };
@@ -287,7 +284,7 @@ export const useLikes = (userId: string) => {
   };
 
   // Vérifier si on peut liker
-  // TODO: réactiver la logique premium quand le business sera configuré
+  // TODO: activer quand on est prêt
   const canLike = (): boolean => {
     return true; // Likes illimités pour tous (mode beta)
   };

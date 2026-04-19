@@ -4,7 +4,7 @@ import { Users, Heart, MessageCircle, TrendingUp, UserCheck, Activity, AlertTria
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  RadialBarChart, RadialBar, Legend,
+  AreaChart, Area,
 } from 'recharts';
 
 interface Stats {
@@ -33,13 +33,16 @@ export default function OverviewPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [subEvolution, setSubEvolution] = useState<{ date: string; total: number }[]>([]);
 
   const loadStats = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true);
 
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    // Début du lundi de la semaine en cours (pas une fenêtre glissante)
+    const dayOfWeek = now.getDay() === 0 ? 6 : now.getDay() - 1; // lundi = 0
+    const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek).toISOString();
 
     const [
       { count: totalUsers },
@@ -64,7 +67,7 @@ export default function OverviewPage() {
       supabase.from('conversations').select('*', { count: 'exact', head: true }),
       supabase.from('messages').select('*', { count: 'exact', head: true }),
       supabase.from('profiles').select('*', { count: 'exact', head: true }).gte('created_at', today),
-      supabase.from('profiles').select('*', { count: 'exact', head: true }).gte('created_at', weekAgo),
+      supabase.from('profiles').select('*', { count: 'exact', head: true }).gte('created_at', startOfWeek),
       supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('gender', 'homme'),
       supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('gender', 'femme'),
       supabase.from('reports').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
@@ -94,6 +97,24 @@ export default function OverviewPage() {
       .neq('gender', 'null')
       .not('name', 'is', null)
       .neq('name', '');
+
+    // Courbe évolution des inscriptions
+    const { data: usersData } = await supabase
+      .from('profiles')
+      .select('created_at')
+      .order('created_at', { ascending: true });
+
+    const grouped: Record<string, number> = {};
+    (usersData ?? []).forEach((p: { created_at: string }) => {
+      const date = p.created_at.split('T')[0];
+      grouped[date] = (grouped[date] || 0) + 1;
+    });
+    const sortedDates = Object.keys(grouped).sort();
+    let cum = 0;
+    setSubEvolution(sortedDates.map((date) => {
+      cum += grouped[date];
+      return { date: date.substring(5).replace('-', '/'), total: cum };
+    }));
 
     setStats({
       totalUsers: totalUsers || 0,
@@ -283,46 +304,31 @@ export default function OverviewPage() {
             </ResponsiveContainer>
           </div>
 
-          {/* Radial — Taux de complétion */}
+          {/* Area — Évolution abonnements */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-            <h3 className="text-white font-semibold mb-4 text-sm">Taux de complétion</h3>
-            <ResponsiveContainer width="100%" height={200}>
-              <RadialBarChart
-                cx="50%"
-                cy="50%"
-                innerRadius="30%"
-                outerRadius="90%"
-                data={[
-                  {
-                    name: 'Visibles',
-                    value: Math.round((stats.visibleInDiscovery / Math.max(stats.totalUsers, 1)) * 100),
-                    fill: '#10b981',
-                  },
-                  {
-                    name: 'Complétés',
-                    value: Math.round((stats.completedProfiles / Math.max(stats.totalUsers, 1)) * 100),
-                    fill: '#6366f1',
-                  },
-                  {
-                    name: 'Avec photo',
-                    value: Math.round(((stats.totalUsers - stats.noPhoto) / Math.max(stats.totalUsers, 1)) * 100),
-                    fill: '#f59e0b',
-                  },
-                ]}
-                startAngle={180}
-                endAngle={0}
-              >
-                <RadialBar dataKey="value" cornerRadius={4} background={{ fill: '#1e293b' }} />
-                <Legend
-                  iconSize={8}
-                  formatter={(value) => <span style={{ color: '#94a3b8', fontSize: 11 }}>{value}</span>}
-                />
-                <Tooltip
-                  contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#fff', fontSize: 12 }}
-                  formatter={(value: any) => [`${value}%`]}
-                />
-              </RadialBarChart>
-            </ResponsiveContainer>
+            <h3 className="text-white font-semibold mb-4 text-sm">Évolution des inscriptions</h3>
+            {subEvolution.length === 0 ? (
+              <div className="flex items-center justify-center h-[200px] text-slate-500 text-sm">Aucune donnée</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <AreaChart data={subEvolution} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="subGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                  <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                  <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} allowDecimals={false} />
+                  <Tooltip
+                    contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#fff', fontSize: 12 }}
+                    formatter={(value: any) => [value, 'Utilisateurs']}
+                  />
+                  <Area type="monotone" dataKey="total" stroke="#f43f5e" strokeWidth={2} fill="url(#subGrad)" dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
           </div>
 
         </div>

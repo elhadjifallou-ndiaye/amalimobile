@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Send, Image as ImageIcon, Smile, MoreVertical, Ban, Trash2, Flag, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { compressImage } from '@/lib/imageUtils';
 import { cn } from '@/utils/cn';
 import UserProfileScreen from './UserProfileScreen';
 
@@ -330,12 +331,26 @@ export default function ChatScreen({ conversation, currentUserId, onBack }: Chat
     e.target.value = '';
 
     setSendingImage(true);
-    const ext = file.name.split('.').pop() ?? 'jpg';
-    const path = `chat/${conversation.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      console.error('Upload image: session expirée');
+      setSendingImage(false);
+      return;
+    }
+
+    const path = `chat/${conversation.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+
+    let uploadBlob: Blob;
+    try {
+      uploadBlob = await compressImage(file, 1200, 0.75);
+    } catch {
+      uploadBlob = file;
+    }
 
     const { error: uploadError } = await supabase.storage
       .from('chat-images')
-      .upload(path, file, { contentType: file.type });
+      .upload(path, uploadBlob, { contentType: 'image/jpeg', cacheControl: '31536000' });
 
     if (uploadError) {
       console.error('Upload image:', uploadError.message);

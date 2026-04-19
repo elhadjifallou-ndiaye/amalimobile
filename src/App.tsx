@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { ScreenType } from '@/types';
+import { trackPageView } from '@/lib/pixel';
 import DiscoveryScreen from '@/components/DiscoveryScreen';
 import CommunityScreen from '@/components/CommunityScreen';
 import MessagesScreen from '@/components/MessagesScreen';
@@ -43,6 +44,9 @@ function AppContent() {
   const { isDarkMode } = useTheme();
   // ✅ UNE SEULE instance centralisée — se connecte dès que user est connu
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications(user?.id ?? undefined);
+
+  // Meta Pixel — PageView à chaque changement d'écran
+  useEffect(() => { trackPageView(); }, [activeScreen]);
 
   useStatusBar(isDarkMode);
   usePushNotifications(user?.id ?? null);
@@ -338,6 +342,7 @@ function AppContent() {
                 notificationCount={unreadCount}
                 onNotificationClick={() => setShowNotificationsPanel(true)}
                 onOpenPremium={() => setActiveScreen('profile')}
+                onNavigateToMessages={handleNavigateToMessages}
               />
             )}
             {activeScreen === 'profile' && <ProfileScreen />}

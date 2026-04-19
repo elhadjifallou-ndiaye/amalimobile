@@ -4,6 +4,7 @@ import Header from './Header';
 import SettingsScreen from './SettingsScreen';
 import CreateEventModal from './CreateEventModal';
 import { supabase, authService } from '@/lib/supabase';
+import { compressImage } from '@/lib/imageUtils';
 
 /* ------------------------------------------------------------------ */
 /* Types                                                                 */
@@ -168,11 +169,18 @@ export default function CommunityScreen({ notificationCount = 0, onNotificationC
       let imageUrl: string | null = null;
 
       if (newPostImage) {
-        const ext = newPostImage.name.split('.').pop();
-        const path = `posts/${userId}/${Date.now()}.${ext}`;
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error('Session expirée, veuillez vous reconnecter.');
+        const path = `posts/${userId}/${Date.now()}.jpg`;
+        let uploadBlob: Blob;
+        try {
+          uploadBlob = await compressImage(newPostImage, 1200, 0.75);
+        } catch {
+          uploadBlob = newPostImage;
+        }
         const { error: uploadErr } = await supabase.storage
           .from('community-images')
-          .upload(path, newPostImage);
+          .upload(path, uploadBlob, { contentType: 'image/jpeg', cacheControl: '31536000' });
         if (!uploadErr) {
           const { data: urlData } = supabase.storage.from('community-images').getPublicUrl(path);
           imageUrl = urlData.publicUrl;

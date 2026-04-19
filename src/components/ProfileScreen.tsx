@@ -5,6 +5,7 @@ import PremiumScreen from './PremiumScreen';
 import SettingsScreen from './SettingsScreen';
 import EditProfileModal from './EditProfileModal';
 import { authService, AuthUser, supabase } from '@/lib/supabase';
+import { compressImage } from '@/lib/imageUtils';
 
 export default function ProfileScreen() {
   const [showPremium, setShowPremium] = useState(false);
@@ -260,13 +261,20 @@ export default function ProfileScreen() {
         }
       }
 
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}/profile_${Date.now()}.${fileExt}`;
+      const fileName = `${user.id}/profile_${Date.now()}.jpg`;
+
+      let uploadBlob: Blob;
+      try {
+        uploadBlob = await compressImage(file);
+      } catch {
+        uploadBlob = file;
+      }
 
       const { error: uploadError } = await supabase.storage
         .from('profile-photos')
-        .upload(fileName, file, {
-          cacheControl: '3600',
+        .upload(fileName, uploadBlob, {
+          contentType: 'image/jpeg',
+          cacheControl: '31536000',
           upsert: true,
         });
 

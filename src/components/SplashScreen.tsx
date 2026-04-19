@@ -57,6 +57,7 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
         ))}
       </div>
 
+
       <style>{`
         /* ---------- fond ---------- */
         /* déjà géré inline avec #090909 */
@@ -159,6 +160,8 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
           0%, 100% { opacity: 0.1; transform: scale(0.8) rotate(0deg); }
           50%       { opacity: 1;   transform: scale(1.2) rotate(20deg); }
         }
+
+
       `}</style>
     </div>
   );

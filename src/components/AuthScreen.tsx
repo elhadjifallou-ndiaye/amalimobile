@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Mail, Lock, User, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import authService from '@/authService';
 import logoAmali from '@/assets/logoamali.png';
+import { trackLead } from '@/lib/pixel';
 
 interface AuthScreenProps {
   onAuthenticated: () => void;
@@ -64,6 +65,7 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
     setLoading(true); setError('');
     const result = await authService.registerWithEmail(email, password, { name });
     if (result.success) {
+      trackLead();
       setMode('confirm_email');
     } else {
       setError(result.error || 'Erreur lors de la création du compte.');

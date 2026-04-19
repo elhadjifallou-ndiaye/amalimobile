@@ -87,5 +87,5 @@ create trigger push_on_new_notification
 
 
 -- ─── Configurer les variables app (à adapter avec tes vraies valeurs) ─────────
--- alter database postgres set app.supabase_url = 'https://coytzhvhksalobmdnzwr.supabase.co';
+-- alter database postgres set app.supabase_url = 'https://igryslbvshkwpyxahgsi.supabase.co';
 -- alter database postgres set app.service_role_key = 'TON_SERVICE_ROLE_KEY';

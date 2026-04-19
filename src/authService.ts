@@ -295,11 +295,16 @@ class AuthService {
       'User already registered': 'Cet email est déjà utilisé',
       'Password should be at least 6 characters': 'Le mot de passe doit contenir au moins 6 caractères',
       'Unable to validate email address': 'Email invalide',
-      'Email rate limit exceeded': 'Trop de tentatives, réessayez plus tard',
+      'Email rate limit exceeded': 'Trop de tentatives. Veuillez patienter quelques minutes avant de réessayer.',
       'Phone number already registered': 'Ce numéro est déjà utilisé',
       'Signups not allowed for this instance': 'Les inscriptions sont temporairement désactivées',
       'Invalid phone number format': 'Format de numéro de téléphone invalide',
     };
+
+    const lower = error.toLowerCase();
+    if (lower.includes('rate limit') || lower.includes('rate_limit')) {
+      return 'Trop de tentatives. Veuillez patienter quelques minutes avant de réessayer.';
+    }
 
     return errorMap[error] || error;
   }

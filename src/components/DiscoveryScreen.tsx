@@ -106,8 +106,7 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
       const { data: allProfiles, error } = await supabase
         .from('profiles')
         .select('*, is_premium, premium_tier')
-        .neq('id', user.id)
-        .order('created_at', { ascending: false });
+        .neq('id', user.id);
 
       if (error) {
         console.error('❌ Erreur de chargement des profils:', error);
@@ -205,36 +204,38 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
           return true;
         });
 
-      // Cacher complètement les profils sans photo valide
+      const isValidUrl = (u?: string | null) =>
+        !!(u && u !== 'null' && u !== 'undefined' && u.trim() !== '');
+
       const hasValidPhoto = (p: typeof formattedProfiles[0]) => {
-        const url = p.profile_photo_url;
-        const urlValid = url && url !== 'null' && url !== 'undefined' && url.trim() !== '';
-        const photosValid = Array.isArray(p.photos) && p.photos.length > 0;
-        return urlValid || photosValid;
+        if (isValidUrl(p.profile_photo_url)) return true;
+        const validPhotos = Array.isArray(p.photos)
+          ? p.photos.filter((u: string) => isValidUrl(u))
+          : [];
+        return validPhotos.length > 0;
       };
+
+      // Seuls les profils avec photo apparaissent dans la discovery
       const withPhotoProfiles = formattedProfiles.filter(hasValidPhoto);
 
-      // Profils jamais passés en premier, profils passés à la fin
       const freshProfiles = withPhotoProfiles.filter(p => !passedIds.has(p.id));
       const passedProfiles = withPhotoProfiles.filter(p => passedIds.has(p.id));
+
+      // Mélanger les profils frais pour que chaque session soit différente
+      for (let i = freshProfiles.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [freshProfiles[i], freshProfiles[j]] = [freshProfiles[j], freshProfiles[i]];
+      }
+
       const mixed = [...freshProfiles, ...passedProfiles];
 
       console.log(`\n📊 FILTRE DISCOVERY — Mon genre: ${myProfile.gender || 'non défini'}`);
-      console.log(`✅ Avec photo: ${mixed.length} | Total filtré: ${formattedProfiles.length}`);
+      console.log(`✅ Avec photo: ${withPhotoProfiles.length} | Sans photo (exclus): ${formattedProfiles.length - withPhotoProfiles.length} | Total: ${mixed.length}`);
 
       if (formattedProfiles.length === 0) {
         console.log('⚠️ Aucun profil ne correspond');
         console.log('💡 Mon genre:', myProfile.gender || 'non défini');
         console.log('💡 Mon objectif:', myProfile.relationship_goal || 'non défini');
-      }
-
-      // Reprendre là où on s'était arrêté (chercher dans mixed, pas formattedProfiles)
-      const lastSeenId = localStorage.getItem(`discovery_last_seen_${user.id}`);
-      if (lastSeenId) {
-        const lastIndex = mixed.findIndex(p => p.id === lastSeenId);
-        if (lastIndex !== -1 && lastIndex + 1 < mixed.length) {
-          setCurrentProfileIndex(lastIndex + 1);
-        }
       }
 
       setProfiles(mixed);
@@ -267,8 +268,10 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
       }
     }
 
-    // Incrémenter le compteur si le profil a une photo
     setIsAnimating(true);
+
+    // Bug 1 fix: empêcher le double incrément quand un match modal s'affiche
+    let matchModalShown = false;
 
     try {
       if (action === 'like') {
@@ -282,26 +285,33 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
       }
 
       console.log('📝 Enregistrement du like...');
-      
+
+      // Supprimer l'éventuel like existant avant d'insérer (évite les doublons)
+      await supabase
+        .from('likes')
+        .delete()
+        .eq('from_user_id', userId)
+        .eq('to_user_id', currentProfile.id);
+
       const { error: likeError } = await supabase
         .from('likes')
-        .upsert({
+        .insert({
           from_user_id: userId,
           to_user_id: currentProfile.id,
           like_type: action === 'pass' ? 'pass' : 'like',
           created_at: new Date().toISOString(),
-        }, {
-          onConflict: 'from_user_id,to_user_id',
         });
 
-      if (likeError) {
-        console.error('❌ Erreur lors du like:', likeError);
-        console.error('❌ Détails:', JSON.stringify(likeError, null, 2));
+      const likeRealError = likeError ?? null;
+
+      if (likeRealError) {
+        console.error('❌ Erreur lors du like:', likeRealError);
       } else {
         console.log('✅ Like enregistré avec succès');
       }
 
-      if (action === 'like' && !likeError) {
+      // Ne pas envoyer notif ni vérifier match si le like n'a pas été sauvegardé
+      if (action === 'like' && !likeRealError) {
         console.log('🔔 Création de notification...');
 
         const { data: myProfile, error: profileError } = await supabase
@@ -330,15 +340,13 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
           if (likeNotifErr) console.error('❌ Notif like:', likeNotifErr);
           else console.log('✅ Notification like envoyée à:', currentProfile.name);
         }
-      }
 
-      if (action === 'like') {
         console.log('💕 Vérification du match mutuel...');
 
         try {
           const { data: mutualLike, error: mutualError } = await supabase
             .from('likes')
-            .select('*')
+            .select('id')
             .eq('from_user_id', currentProfile.id)
             .eq('to_user_id', userId)
             .in('like_type', ['like', 'super_like'])
@@ -351,7 +359,7 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
 
             const { data: existingMatch, error: matchCheckError } = await supabase
               .from('matches')
-              .select('*')
+              .select('id')
               .or(`and(user1_id.eq.${userId},user2_id.eq.${currentProfile.id}),and(user1_id.eq.${currentProfile.id},user2_id.eq.${userId})`)
               .maybeSingle();
 
@@ -359,9 +367,11 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
               console.error('⚠️ Erreur vérification match existant:', matchCheckError);
             }
 
-            if (!existingMatch) {
+            // Bug 3 fix: ne pas tenter d'insérer si la vérification d'existence a échoué
+            if (!existingMatch && !matchCheckError) {
               console.log('💕 Création du match...');
 
+              const now = new Date().toISOString();
               const { data: newMatch, error: matchError } = await supabase
                 .from('matches')
                 .insert({
@@ -375,6 +385,30 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
 
               if (matchError) {
                 console.error('❌ Erreur création match:', matchError);
+                // Bug 5 fix (race condition): si l'insert échoue, le match existe peut-être déjà
+                const { data: raceMatch } = await supabase
+                  .from('matches')
+                  .select('id')
+                  .or(`and(user1_id.eq.${userId},user2_id.eq.${currentProfile.id}),and(user1_id.eq.${currentProfile.id},user2_id.eq.${userId})`)
+                  .maybeSingle();
+                if (raceMatch) {
+                  console.log('ℹ️ Match créé par l\'autre utilisateur (race condition), récupération...');
+                  const { data: raceConv } = await supabase
+                    .from('conversations')
+                    .select('id')
+                    .eq('match_id', raceMatch.id)
+                    .maybeSingle();
+                  setMatchedUser({
+                    id: currentProfile.id,
+                    name: currentProfile.name,
+                    photo: currentProfile.profile_photo_url,
+                    age: currentProfile.age,
+                    location: currentProfile.location,
+                    conversationId: raceConv?.id ?? null,
+                  });
+                  matchModalShown = true;
+                  setShowMatchModal(true);
+                }
               } else {
                 console.log('✅ Match créé avec succès !', newMatch);
 
@@ -387,11 +421,11 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
                     user1_id: userId,
                     user2_id: currentProfile.id,
                     last_message: null,
-                    last_message_at: new Date().toISOString(),
+                    last_message_at: now,
                     user1_unread_count: 0,
                     user2_unread_count: 0,
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
+                    created_at: now,
+                    updated_at: now,
                   })
                   .select()
                   .single();
@@ -412,7 +446,6 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
                 if (myProfile) {
                   console.log('🔔 Création des notifications de match (insert direct)...');
 
-                  // Insert direct (comme communauté) pour éviter tout problème de contrainte
                   const { error: notif1Err } = await supabase.from('notifications').insert({
                     user_id: currentProfile.id,
                     type: 'new_match',
@@ -453,9 +486,10 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
                   conversationId: newConversation?.id ?? null,
                 });
 
+                matchModalShown = true;
                 setShowMatchModal(true);
               }
-            } else {
+            } else if (existingMatch) {
               console.log('ℹ️ Match déjà existant, pas de duplication');
             }
           } else {
@@ -470,12 +504,11 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
       console.error('❌ Erreur générale lors de l\'action:', error);
     }
 
+    // Bug 1 fix: si le modal match s'affiche, c'est lui qui gère l'incrément via onKeepSwiping
     setTimeout(() => {
-      // Sauvegarder le dernier profil vu
-      if (currentProfile && userId) {
-        localStorage.setItem(`discovery_last_seen_${userId}`, currentProfile.id);
+      if (!matchModalShown) {
+        setCurrentProfileIndex(prev => prev + 1);
       }
-      setCurrentProfileIndex(prev => prev + 1);
       setIsAnimating(false);
     }, 300);
   };
@@ -528,12 +561,15 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
               age: currentProfile.age,
               location: currentProfile.location,
               bio: currentProfile.bio || '',
-              image:
-                currentProfile.photos?.length > 0
-                  ? currentProfile.photos
-                  : (currentProfile.profile_photo_url && currentProfile.profile_photo_url !== 'null')
-                  ? [currentProfile.profile_photo_url]
-                  : [],
+              image: (() => {
+                const isValid = (u?: string | null) =>
+                  !!(u && u !== 'null' && u !== 'undefined' && u.trim() !== '');
+                const mainPhoto = isValid(currentProfile.profile_photo_url)
+                  ? currentProfile.profile_photo_url : null;
+                const extraPhotos = (currentProfile.photos || [])
+                  .filter((u: string) => isValid(u) && u !== mainPhoto);
+                return mainPhoto ? [mainPhoto, ...extraPhotos] : extraPhotos;
+              })(),
               interests: currentProfile.interests || [],
               distance: currentProfile.distance ?? 0,
               verified: true,
@@ -561,17 +597,15 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
                 ? 'Revenez plus tard pour découvrir de nouveaux profils'
                 : 'Revenez plus tard pour découvrir de nouveaux profils'}
             </p>
-            {profiles.length > 0 && (
-              <button
-                onClick={() => {
-                  localStorage.removeItem(`discovery_last_seen_${userId}`);
-                  setCurrentProfileIndex(0);
-                }}
-                className="px-6 py-3 bg-gradient-to-r from-rose-500 to-amber-500 text-white rounded-2xl font-semibold hover:from-rose-600 hover:to-amber-600 transition-all shadow-lg hover:shadow-xl active:scale-95"
-              >
-                Recommencer
-              </button>
-            )}
+            <button
+              onClick={() => {
+                setCurrentProfileIndex(0);
+                loadProfiles();
+              }}
+              className="px-6 py-3 bg-gradient-to-r from-rose-500 to-amber-500 text-white rounded-2xl font-semibold hover:from-rose-600 hover:to-amber-600 transition-all shadow-lg hover:shadow-xl active:scale-95"
+            >
+              Actualiser
+            </button>
           </div>
         )}
       </div>

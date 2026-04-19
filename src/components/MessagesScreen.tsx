@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase, authService } from '@/lib/supabase';
+import { withTransform } from '@/lib/imageUtils';
 import ChatScreen from './ChatScreen';
 import UserProfileScreen from './UserProfileScreen';
 import { formatDistanceToNow } from 'date-fns';
@@ -375,7 +376,7 @@ export default function MessagesScreen({ onChatStateChange, onNotificationCountC
                 <div className="relative flex-shrink-0">
                   {item.otherUser.profile_photo_url ? (
                     <img
-                      src={item.otherUser.profile_photo_url}
+                      src={withTransform(item.otherUser.profile_photo_url, 112)}
                       alt={item.otherUser.name}
                       className="w-14 h-14 rounded-full object-cover"
                       onError={(e) => { e.currentTarget.style.display = 'none'; }}

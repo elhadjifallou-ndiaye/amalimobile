@@ -7,6 +7,7 @@ import {
   getPaymentStatus,
 } from '@/lib/paymentService';
 import { authService } from '@/lib/supabase';
+import { trackInitiateCheckout, trackPurchase } from '@/lib/pixel';
 
 interface PaymentModalProps {
   plan: PlanDefinition;
@@ -54,6 +55,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }: PaymentModalP
   const pollingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    trackInitiateCheckout({ value: plan.priceAmount, currency: 'XOF', content_name: plan.name });
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
       if (pollingTimeoutRef.current) clearTimeout(pollingTimeoutRef.current);
@@ -69,6 +71,7 @@ export default function PaymentModal({ plan, onClose, onSuccess }: PaymentModalP
       if (status?.status === 'completed') {
         clearInterval(pollingRef.current!);
         clearTimeout(pollingTimeoutRef.current!);
+        trackPurchase({ value: plan.priceAmount, currency: 'XOF', content_name: plan.name });
         setStep('success');
         onSuccess(status.planTier ?? '');
       } else if (status?.status === 'failed' || status?.status === 'cancelled') {

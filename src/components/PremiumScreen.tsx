@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Crown, Sparkles, Star, Eye, MessageCircle, TrendingUp, Video, Shield, Check, Mic, Zap } from 'lucide-react';
 import { PLANS, PlanDefinition, getPlanById } from '@/lib/paymentService';
 import PaymentModal from './PaymentModal';
+import { trackViewContent } from '@/lib/pixel';
 
 interface PremiumScreenProps {
   onClose: () => void;
@@ -126,6 +127,8 @@ export default function PremiumScreen({ onClose, userGender = '' }: PremiumScree
   const defaultSelected = isFemme ? 'amaliprestigefemmev2' : 'amalielitev2';
   const [selectedPlanId, setSelectedPlanId] = useState<string>(defaultSelected);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+
+  useEffect(() => { trackViewContent({ content_name: 'Premium' }); }, []);
 
   const selectedPlan = getPlanById(selectedPlanId);
   const displayedPlans = displayedPlanIds

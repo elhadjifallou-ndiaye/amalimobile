@@ -1,28 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { ArrowLeft, ArrowRight, Check, Upload, User, Heart, Sparkles, Users, MapPin, Loader2 } from 'lucide-react';
 import { supabase, authService } from '@/lib/supabase';
-
-const compressImage = (file: File): Promise<Blob> =>
-  new Promise((resolve, reject) => {
-    const img = new Image();
-    const objectUrl = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      const MAX_DIM = 1920;
-      let { width, height } = img;
-      if (width > MAX_DIM || height > MAX_DIM) {
-        if (width > height) { height = Math.round(height * MAX_DIM / width); width = MAX_DIM; }
-        else { width = Math.round(width * MAX_DIM / height); height = MAX_DIM; }
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
-      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Compression échouée')), 'image/jpeg', 0.85);
-    };
-    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Image invalide')); };
-    img.src = objectUrl;
-  });
+import { trackCompleteRegistration } from '@/lib/pixel';
+import { compressImage } from '@/lib/imageUtils';
 
 interface ProfileData {
   name: string;
@@ -242,7 +222,7 @@ export default function ProfileCompletion({ userId, onComplete, onSkipForNow }: 
 
           const { error: uploadError } = await supabase.storage
             .from('profile-photos')
-            .upload(fileName, compressed, { contentType: 'image/jpeg' });
+            .upload(fileName, compressed, { contentType: 'image/jpeg', cacheControl: '31536000' });
 
           if (uploadError) throw uploadError;
 
@@ -285,6 +265,7 @@ export default function ProfileCompletion({ userId, onComplete, onSkipForNow }: 
 
       if (updateError) throw updateError;
       
+      trackCompleteRegistration();
       setTimeout(() => {
         onComplete();
       }, 500);

@@ -1,20 +1,26 @@
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import { LogIn, Loader2 } from 'lucide-react';
+import { LogIn } from 'lucide-react';
 
-export default function AdminLogin() {
+const ADMIN_EMAIL = 'admin@amali.love';
+const ADMIN_PASSWORD = 'Amali123';
+
+interface AdminLoginProps {
+  onSuccess: () => void;
+}
+
+export default function AdminLogin({ onSuccess }: AdminLoginProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError('');
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setError('Email ou mot de passe incorrect.');
-    setLoading(false);
+    if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
+      sessionStorage.setItem('admin_auth', '1');
+      onSuccess();
+    } else {
+      setError('Email ou mot de passe incorrect.');
+    }
   };
 
   return (
@@ -64,10 +70,9 @@ export default function AdminLogin() {
 
           <button
             type="submit"
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-rose-500 to-amber-500 text-white font-semibold rounded-xl hover:opacity-90 transition-all disabled:opacity-50 mt-2"
+            className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-rose-500 to-amber-500 text-white font-semibold rounded-xl hover:opacity-90 transition-all mt-2"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
+            <LogIn className="w-4 h-4" />
             Se connecter
           </button>
         </form>
