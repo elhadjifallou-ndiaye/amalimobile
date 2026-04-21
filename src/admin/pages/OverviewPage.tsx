@@ -147,6 +147,7 @@ export default function OverviewPage() {
   }, [loadStats]);
 
   const cards = [
+    { label: 'Profils actifs (Discovery)', value: stats?.visibleInDiscovery, icon: Activity, color: 'text-green-400', bg: 'bg-green-500/10 border-green-500/20' },
     { label: 'Utilisateurs total', value: stats?.totalUsers, icon: Users, color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/20' },
     { label: 'Profils complétés', value: stats?.completedProfiles, icon: UserCheck, color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20' },
     { label: 'Matchs créés', value: stats?.totalMatches, icon: Heart, color: 'text-rose-400', bg: 'bg-rose-500/10 border-rose-500/20' },

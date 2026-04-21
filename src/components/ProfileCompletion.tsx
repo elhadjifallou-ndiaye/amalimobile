@@ -375,7 +375,8 @@ export default function ProfileCompletion({ userId, onComplete, onSkipForNow }: 
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Genre *</label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Votre genre *</label>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Indiquez votre genre (pas celui que vous recherchez)</p>
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"

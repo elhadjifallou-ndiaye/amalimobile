@@ -20,8 +20,14 @@ function isValidEmail(email: string): boolean {
   return true;
 }
 
+function isInAppBrowser(): boolean {
+  const ua = navigator.userAgent || '';
+  return /FBAN|FBAV|Instagram|BytedanceWebview|TikTok|MicroMessenger|Twitter/i.test(ua);
+}
+
 export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
-  const [mode, setMode] = useState<AuthMode>('signin');
+  const [mode, setMode] = useState<AuthMode>('signup');
+  const inAppBrowser = isInAppBrowser();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -104,6 +110,15 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
       style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <div className="min-h-full flex flex-col items-center justify-center px-5 py-10">
+
+        {/* Bannière navigateur in-app */}
+        {inAppBrowser && (
+          <div className="w-full max-w-sm mb-4 px-4 py-3 bg-amber-50 border border-amber-300 rounded-2xl text-center">
+            <p className="text-amber-800 text-sm font-medium mb-1">Ouvrez dans votre navigateur</p>
+            <p className="text-amber-700 text-xs mb-2">Pour une meilleure expérience, ouvrez ce lien dans Chrome ou Safari.</p>
+            <p className="text-amber-600 text-xs">Appuyez sur <strong>···</strong> puis <strong>"Ouvrir dans le navigateur"</strong></p>
+          </div>
+        )}
 
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">

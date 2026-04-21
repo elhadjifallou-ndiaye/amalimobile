@@ -475,10 +475,11 @@ export default function ChatScreen({ conversation, currentUserId, onBack }: Chat
   }
 
   return (
-    <div 
-      className="fixed inset-0 z-[9999] flex flex-col h-screen bg-slate-50 dark:bg-slate-900"
+    <div
+      className="fixed inset-0 z-[9999] flex flex-col bg-slate-50 dark:bg-slate-900"
       style={{
         paddingTop: 'env(safe-area-inset-top)',
+        height: '100dvh',
       }}
     >
       {/* Header */}
