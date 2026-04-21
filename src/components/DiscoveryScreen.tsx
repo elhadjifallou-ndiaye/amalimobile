@@ -70,96 +70,64 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
   const loadProfiles = async () => {
     try {
       const { user } = await authService.getCurrentUser();
-      if (!user) {
-        console.log('❌ Utilisateur non connecté');
-        return;
-      }
+      if (!user) return;
 
       setUserId(user.id);
-      console.log('✅ User ID:', user.id);
 
-      const { data: myProfile } = await supabase
-        .from('profiles')
-        .select('gender, relationship_goal, profile_photo_url, latitude, longitude')
-        .eq('id', user.id)
-        .single();
+      // Requêtes parallèles : profil + likes + matchs en même temps
+      const [
+        { data: myProfile },
+        { data: myLikes },
+        { data: myMatches },
+        { data: allProfiles, error },
+      ] = await Promise.all([
+        supabase.from('profiles')
+          .select('gender, relationship_goal, profile_photo_url, latitude, longitude')
+          .eq('id', user.id)
+          .single(),
+        supabase.from('likes')
+          .select('to_user_id, like_type')
+          .eq('from_user_id', user.id),
+        supabase.from('matches')
+          .select('user1_id, user2_id')
+          .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`),
+        supabase.from('profiles')
+          .select('id, name, date_of_birth, gender, location, bio, profile_photo_url, photos, profession, education_level, height, prayer_frequency, interests, is_premium, premium_tier, latitude, longitude')
+          .neq('id', user.id)
+          .eq('profile_completed', true)
+          .limit(100),
+      ]);
 
-      if (!myProfile) {
-        console.log('❌ Profil non trouvé');
-        return;
-      }
+      if (!myProfile || error) return;
 
-      console.log('✅ Mon profil:', myProfile);
       setCurrentUserPhoto(myProfile.profile_photo_url);
 
-      const calculateAge = (dateOfBirth: string) => {
+      const calculateAge = (dob: string) => {
         const today = new Date();
-        const birthDate = new Date(dateOfBirth);
-        let age = today.getFullYear() - birthDate.getFullYear();
-        const monthDiff = today.getMonth() - birthDate.getMonth();
-        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-          age--;
-        }
+        const birth = new Date(dob);
+        let age = today.getFullYear() - birth.getFullYear();
+        const m = today.getMonth() - birth.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
         return age;
       };
 
-      const { data: allProfiles, error } = await supabase
-        .from('profiles')
-        .select('*, is_premium, premium_tier')
-        .neq('id', user.id);
-
-      if (error) {
-        console.error('❌ Erreur de chargement des profils:', error);
-        return;
-      }
-
-      console.log('📊 Profils bruts trouvés:', allProfiles?.length || 0);
-
-      // Récupérer les likes (jamais réaffichés)
-      const { data: myLikes, error: likesError } = await supabase
-        .from('likes')
-        .select('to_user_id, like_type')
-        .eq('from_user_id', user.id);
-
-      if (likesError) {
-        console.error('⚠️ Erreur récupération likes:', likesError);
-      }
-
-      // Récupérer les matchs existants
-      const { data: myMatches, error: matchesError } = await supabase
-        .from('matches')
-        .select('user1_id, user2_id')
-        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`);
-
-      if (matchesError) {
-        console.error('⚠️ Erreur récupération matchs:', matchesError);
-      }
-
-      // IDs likés → exclus définitivement
       const likedIds = new Set<string>();
-      // IDs passés → repoussés à la fin
       const passedIds = new Set<string>();
 
       myLikes?.forEach(like => {
-        if (like.like_type === 'pass') {
-          passedIds.add(like.to_user_id);
-        } else {
-          likedIds.add(like.to_user_id);
-        }
+        if (like.like_type === 'pass') passedIds.add(like.to_user_id);
+        else likedIds.add(like.to_user_id);
       });
-
       myMatches?.forEach(match => {
-        const otherId = match.user1_id === user.id ? match.user2_id : match.user1_id;
-        likedIds.add(otherId);
+        likedIds.add(match.user1_id === user.id ? match.user2_id : match.user1_id);
       });
 
-      // seenUserIds = seulement ceux qu'on exclut totalement (likes + matchs)
-      const seenUserIds = likedIds;
-
-      console.log('🚫 Likés (exclus):', likedIds.size, '| Passés (fin de file):', passedIds.size);
-
-      const myLat = myProfile?.latitude ?? null;
-      const myLng = myProfile?.longitude ?? null;
+      const isValidUrl = (u?: string | null) =>
+        !!(u && u !== 'null' && u !== 'undefined' && u.trim() !== '');
+      const isValidGender = (g?: string) => !!(g && g !== 'null' && g !== 'undefined');
+      const myGender = myProfile.gender?.toLowerCase();
+      const myLat = myProfile.latitude ?? null;
+      const myLng = myProfile.longitude ?? null;
 
       const formattedProfiles = (allProfiles || [])
         .map(profile => ({
@@ -171,76 +139,29 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
               : null,
         }))
         .filter(profile => {
-          const isValidGender = (g?: string) => !!(g && g !== 'null' && g !== 'undefined');
-          const myGender = myProfile.gender?.toLowerCase();
+          if (likedIds.has(profile.id)) return false;
+          if (!profile.name) return false;
+          if (profile.date_of_birth && calculateAge(profile.date_of_birth) < 18) return false;
           const theirGender = profile.gender?.toLowerCase();
-
-          if (seenUserIds.has(profile.id)) {
-            console.log(`🚫 [${profile.name}] déjà vu`);
-            return false;
-          }
-          if (!profile.name) {
-            console.log(`🚫 [${profile.id}] sans prénom`);
-            return false;
-          }
-          // Les profils sans photo sont inclus avec un avatar par défaut
-          if (profile.date_of_birth && profile.age < 18) {
-            console.log(`🚫 [${profile.name}] mineur (${profile.age} ans)`);
-            return false;
-          }
-          if (!isValidGender(theirGender)) {
-            console.log(`🚫 [${profile.name}] sans genre`);
-            return false;
-          }
-          if (!isValidGender(myGender)) {
-            console.log(`✅ [${profile.name}] visible — je n'ai pas de genre`);
-            return true;
-          }
-          if (myGender === theirGender) {
-            console.log(`🚫 [${profile.name}] même genre (${theirGender})`);
-            return false;
-          }
-          console.log(`✅ [${profile.name}] visible — genre opposé (${theirGender})`);
+          if (!isValidGender(theirGender)) return false;
+          if (isValidGender(myGender) && myGender === theirGender) return false;
+          const hasPhoto = isValidUrl(profile.profile_photo_url) ||
+            (Array.isArray(profile.photos) && profile.photos.some((u: string) => isValidUrl(u)));
+          if (!hasPhoto) return false;
           return true;
         });
 
-      const isValidUrl = (u?: string | null) =>
-        !!(u && u !== 'null' && u !== 'undefined' && u.trim() !== '');
+      const freshProfiles = formattedProfiles.filter(p => !passedIds.has(p.id));
+      const passedProfiles = formattedProfiles.filter(p => passedIds.has(p.id));
 
-      const hasValidPhoto = (p: typeof formattedProfiles[0]) => {
-        if (isValidUrl(p.profile_photo_url)) return true;
-        const validPhotos = Array.isArray(p.photos)
-          ? p.photos.filter((u: string) => isValidUrl(u))
-          : [];
-        return validPhotos.length > 0;
-      };
-
-      // Seuls les profils avec photo apparaissent dans la discovery
-      const withPhotoProfiles = formattedProfiles.filter(hasValidPhoto);
-
-      const freshProfiles = withPhotoProfiles.filter(p => !passedIds.has(p.id));
-      const passedProfiles = withPhotoProfiles.filter(p => passedIds.has(p.id));
-
-      // Mélanger les profils frais pour que chaque session soit différente
       for (let i = freshProfiles.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [freshProfiles[i], freshProfiles[j]] = [freshProfiles[j], freshProfiles[i]];
       }
 
-      const mixed = [...freshProfiles, ...passedProfiles];
-
-      console.log(`\n📊 FILTRE DISCOVERY — Mon genre: ${myProfile.gender || 'non défini'}`);
-      console.log(`✅ Avec photo: ${withPhotoProfiles.length} | Sans photo (exclus): ${formattedProfiles.length - withPhotoProfiles.length} | Total: ${mixed.length}`);
-
-      if (formattedProfiles.length === 0) {
-        console.log('⚠️ Aucun profil ne correspond');
-        console.log('💡 Mon genre:', myProfile.gender || 'non défini');
-        console.log('💡 Mon objectif:', myProfile.relationship_goal || 'non défini');
-      }
-
-      setProfiles(mixed);
+      setProfiles([...freshProfiles, ...passedProfiles]);
     } catch (error) {
-      console.error('❌ Erreur:', error);
+      console.error('Discovery error:', error);
     } finally {
       setLoading(false);
     }
@@ -270,247 +191,115 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
 
     setIsAnimating(true);
 
-    // Bug 1 fix: empêcher le double incrément quand un match modal s'affiche
-    let matchModalShown = false;
-
-    try {
-      if (action === 'like') {
-        const success = await consumeLike();
-        if (!success) {
-          setShowNoLikesModal(true);
-          setIsAnimating(false);
-          return;
-        }
-        console.log('✅ Like consommé');
+    // Vérification du like avant tout (bloquant)
+    if (action === 'like') {
+      const success = await consumeLike();
+      if (!success) {
+        setShowNoLikesModal(true);
+        setIsAnimating(false);
+        return;
       }
+    }
 
-      console.log('📝 Enregistrement du like...');
+    // Avancer immédiatement la carte — le reste se fait en arrière-plan
+    const profileSnapshot = { ...currentProfile };
+    const userIdSnapshot = userId;
 
-      // Supprimer l'éventuel like existant avant d'insérer (évite les doublons)
-      await supabase
-        .from('likes')
-        .delete()
-        .eq('from_user_id', userId)
-        .eq('to_user_id', currentProfile.id);
+    setTimeout(() => {
+      setCurrentProfileIndex(prev => prev + 1);
+      setIsAnimating(false);
+    }, 280);
 
-      const { error: likeError } = await supabase
-        .from('likes')
-        .insert({
-          from_user_id: userId,
-          to_user_id: currentProfile.id,
+    // Tout le reste en arrière-plan (fire & forget)
+    (async () => {
+      try {
+        await supabase.from('likes').delete()
+          .eq('from_user_id', userIdSnapshot)
+          .eq('to_user_id', profileSnapshot.id);
+
+        const { error: likeError } = await supabase.from('likes').insert({
+          from_user_id: userIdSnapshot,
+          to_user_id: profileSnapshot.id,
           like_type: action === 'pass' ? 'pass' : 'like',
           created_at: new Date().toISOString(),
         });
 
-      const likeRealError = likeError ?? null;
+        if (likeError || action !== 'like') return;
 
-      if (likeRealError) {
-        console.error('❌ Erreur lors du like:', likeRealError);
-      } else {
-        console.log('✅ Like enregistré avec succès');
-      }
+        // Notification + vérification match en parallèle
+        const [{ data: myProfile }, { data: mutualLike }] = await Promise.all([
+          supabase.from('profiles').select('name, profile_photo_url').eq('id', userIdSnapshot).single(),
+          supabase.from('likes').select('id')
+            .eq('from_user_id', profileSnapshot.id)
+            .eq('to_user_id', userIdSnapshot)
+            .in('like_type', ['like', 'super_like'])
+            .maybeSingle(),
+        ]);
 
-      // Ne pas envoyer notif ni vérifier match si le like n'a pas été sauvegardé
-      if (action === 'like' && !likeRealError) {
-        console.log('🔔 Création de notification...');
-
-        const { data: myProfile, error: profileError } = await supabase
-          .from('profiles')
-          .select('name, profile_photo_url')
-          .eq('id', userId)
-          .single();
-
-        if (profileError) {
-          console.error('❌ Erreur récupération profil:', profileError);
-        } else {
-          console.log('👤 Mon profil récupéré:', myProfile);
-
-          const { error: likeNotifErr } = await supabase.from('notifications').insert({
-            user_id: currentProfile.id,
+        if (myProfile) {
+          supabase.from('notifications').insert({
+            user_id: profileSnapshot.id,
             type: 'new_like',
             title: `${myProfile.name} a aimé votre profil`,
             message: `${myProfile.name} a liké votre profil ❤️`,
-            data: {
-              from_user_id: userId,
-              from_user_name: myProfile.name,
-              from_user_photo: myProfile.profile_photo_url,
-            },
+            data: { from_user_id: userIdSnapshot, from_user_name: myProfile.name, from_user_photo: myProfile.profile_photo_url },
             is_read: false,
           });
-          if (likeNotifErr) console.error('❌ Notif like:', likeNotifErr);
-          else console.log('✅ Notification like envoyée à:', currentProfile.name);
         }
 
-        console.log('💕 Vérification du match mutuel...');
+        if (!mutualLike) return;
 
-        try {
-          const { data: mutualLike, error: mutualError } = await supabase
-            .from('likes')
-            .select('id')
-            .eq('from_user_id', currentProfile.id)
-            .eq('to_user_id', userId)
-            .in('like_type', ['like', 'super_like'])
-            .maybeSingle();
+        // Match mutuel
+        const { data: existingMatch } = await supabase.from('matches').select('id')
+          .or(`and(user1_id.eq.${userIdSnapshot},user2_id.eq.${profileSnapshot.id}),and(user1_id.eq.${profileSnapshot.id},user2_id.eq.${userIdSnapshot})`)
+          .maybeSingle();
 
-          if (mutualError) {
-            console.error('⚠️ Erreur vérification match:', mutualError);
-          } else if (mutualLike) {
-            console.log('🎉 Match mutuel détecté !');
+        if (existingMatch) return;
 
-            const { data: existingMatch, error: matchCheckError } = await supabase
-              .from('matches')
-              .select('id')
-              .or(`and(user1_id.eq.${userId},user2_id.eq.${currentProfile.id}),and(user1_id.eq.${currentProfile.id},user2_id.eq.${userId})`)
-              .maybeSingle();
+        const now = new Date().toISOString();
+        const { data: newMatch, error: matchError } = await supabase.from('matches')
+          .insert({ user1_id: userIdSnapshot, user2_id: profileSnapshot.id, status: 'accepted', compatibility_score: 85 })
+          .select().single();
 
-            if (matchCheckError) {
-              console.error('⚠️ Erreur vérification match existant:', matchCheckError);
-            }
+        const matchId = newMatch?.id ?? (matchError ? (await supabase.from('matches').select('id')
+          .or(`and(user1_id.eq.${userIdSnapshot},user2_id.eq.${profileSnapshot.id}),and(user1_id.eq.${profileSnapshot.id},user2_id.eq.${userIdSnapshot})`)
+          .maybeSingle()).data?.id : null);
 
-            // Bug 3 fix: ne pas tenter d'insérer si la vérification d'existence a échoué
-            if (!existingMatch && !matchCheckError) {
-              console.log('💕 Création du match...');
+        if (!matchId) return;
 
-              const now = new Date().toISOString();
-              const { data: newMatch, error: matchError } = await supabase
-                .from('matches')
-                .insert({
-                  user1_id: userId,
-                  user2_id: currentProfile.id,
-                  status: 'accepted',
-                  compatibility_score: 85,
-                })
-                .select()
-                .single();
+        const { data: newConversation } = await supabase.from('conversations').insert({
+          match_id: matchId,
+          user1_id: userIdSnapshot,
+          user2_id: profileSnapshot.id,
+          last_message: null,
+          last_message_at: now,
+          user1_unread_count: 0,
+          user2_unread_count: 0,
+          created_at: now,
+          updated_at: now,
+        }).select().single();
 
-              if (matchError) {
-                console.error('❌ Erreur création match:', matchError);
-                // Bug 5 fix (race condition): si l'insert échoue, le match existe peut-être déjà
-                const { data: raceMatch } = await supabase
-                  .from('matches')
-                  .select('id')
-                  .or(`and(user1_id.eq.${userId},user2_id.eq.${currentProfile.id}),and(user1_id.eq.${currentProfile.id},user2_id.eq.${userId})`)
-                  .maybeSingle();
-                if (raceMatch) {
-                  console.log('ℹ️ Match créé par l\'autre utilisateur (race condition), récupération...');
-                  const { data: raceConv } = await supabase
-                    .from('conversations')
-                    .select('id')
-                    .eq('match_id', raceMatch.id)
-                    .maybeSingle();
-                  setMatchedUser({
-                    id: currentProfile.id,
-                    name: currentProfile.name,
-                    photo: currentProfile.profile_photo_url,
-                    age: currentProfile.age,
-                    location: currentProfile.location,
-                    conversationId: raceConv?.id ?? null,
-                  });
-                  matchModalShown = true;
-                  setShowMatchModal(true);
-                }
-              } else {
-                console.log('✅ Match créé avec succès !', newMatch);
-
-                console.log('💬 Création de la conversation...');
-
-                const { data: newConversation, error: convError } = await supabase
-                  .from('conversations')
-                  .insert({
-                    match_id: newMatch.id,
-                    user1_id: userId,
-                    user2_id: currentProfile.id,
-                    last_message: null,
-                    last_message_at: now,
-                    user1_unread_count: 0,
-                    user2_unread_count: 0,
-                    created_at: now,
-                    updated_at: now,
-                  })
-                  .select()
-                  .single();
-
-                if (convError) {
-                  console.error('❌ Erreur création conversation:', convError);
-                  console.error('❌ Détails:', JSON.stringify(convError, null, 2));
-                } else {
-                  console.log('✅ Conversation créée avec succès !', newConversation);
-                }
-
-                const { data: myProfile } = await supabase
-                  .from('profiles')
-                  .select('name, profile_photo_url')
-                  .eq('id', userId)
-                  .single();
-
-                if (myProfile) {
-                  console.log('🔔 Création des notifications de match (insert direct)...');
-
-                  const { error: notif1Err } = await supabase.from('notifications').insert({
-                    user_id: currentProfile.id,
-                    type: 'new_match',
-                    title: 'Nouveau match ! 💕',
-                    message: `Vous avez matché avec ${myProfile.name} !`,
-                    data: {
-                      from_user_id: userId,
-                      from_user_name: myProfile.name,
-                      from_user_photo: myProfile.profile_photo_url,
-                    },
-                    is_read: false,
-                  });
-                  if (notif1Err) console.error('❌ Notif match (autre user):', notif1Err);
-
-                  const { error: notif2Err } = await supabase.from('notifications').insert({
-                    user_id: userId,
-                    type: 'new_match',
-                    title: 'Nouveau match ! 💕',
-                    message: `Vous avez matché avec ${currentProfile.name} !`,
-                    data: {
-                      from_user_id: currentProfile.id,
-                      from_user_name: currentProfile.name,
-                      from_user_photo: currentProfile.profile_photo_url,
-                    },
-                    is_read: false,
-                  });
-                  if (notif2Err) console.error('❌ Notif match (moi):', notif2Err);
-
-                  if (!notif1Err && !notif2Err) console.log('✅ Notifications de match envoyées');
-                }
-
-                setMatchedUser({
-                  id: currentProfile.id,
-                  name: currentProfile.name,
-                  photo: currentProfile.profile_photo_url,
-                  age: currentProfile.age,
-                  location: currentProfile.location,
-                  conversationId: newConversation?.id ?? null,
-                });
-
-                matchModalShown = true;
-                setShowMatchModal(true);
-              }
-            } else if (existingMatch) {
-              console.log('ℹ️ Match déjà existant, pas de duplication');
-            }
-          } else {
-            console.log('ℹ️ Pas de match mutuel (pas encore)');
-          }
-        } catch (matchError) {
-          console.error('❌ Erreur lors de la vérification du match:', matchError);
+        if (myProfile) {
+          supabase.from('notifications').insert([
+            { user_id: profileSnapshot.id, type: 'new_match', title: 'Nouveau match ! 💕', message: `Vous avez matché avec ${myProfile.name} !`, data: { from_user_id: userIdSnapshot, from_user_name: myProfile.name, from_user_photo: myProfile.profile_photo_url }, is_read: false },
+            { user_id: userIdSnapshot, type: 'new_match', title: 'Nouveau match ! 💕', message: `Vous avez matché avec ${profileSnapshot.name} !`, data: { from_user_id: profileSnapshot.id, from_user_name: profileSnapshot.name, from_user_photo: profileSnapshot.profile_photo_url }, is_read: false },
+          ]);
         }
-      }
 
-    } catch (error) {
-      console.error('❌ Erreur générale lors de l\'action:', error);
-    }
-
-    // Bug 1 fix: si le modal match s'affiche, c'est lui qui gère l'incrément via onKeepSwiping
-    setTimeout(() => {
-      if (!matchModalShown) {
-        setCurrentProfileIndex(prev => prev + 1);
+        setMatchedUser({
+          id: profileSnapshot.id,
+          name: profileSnapshot.name,
+          photo: profileSnapshot.profile_photo_url,
+          age: profileSnapshot.age,
+          location: profileSnapshot.location,
+          conversationId: newConversation?.id ?? null,
+        });
+        setCurrentProfileIndex(prev => prev - 1);
+        setShowMatchModal(true);
+      } catch (err) {
+        console.error('Action background error:', err);
       }
-      setIsAnimating(false);
-    }, 300);
+    })();
   };
 
   const handleUpgradeToPremium = () => {
