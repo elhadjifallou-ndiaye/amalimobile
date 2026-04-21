@@ -95,7 +95,8 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
           .select('id, name, date_of_birth, gender, location, bio, profile_photo_url, photos, profession, education_level, height, prayer_frequency, interests, is_premium, premium_tier, latitude, longitude')
           .neq('id', user.id)
           .eq('profile_completed', true)
-          .limit(100),
+          .order('created_at', { ascending: false })
+          .limit(300),
       ]);
 
       if (!myProfile || error) return;
