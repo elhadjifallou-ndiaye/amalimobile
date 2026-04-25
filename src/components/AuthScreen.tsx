@@ -138,7 +138,6 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               backgroundClip: 'text',
             }}
           >
-            amali
           </h1>
           <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
             {mode === 'signin' && 'Bon retour parmi nous'}

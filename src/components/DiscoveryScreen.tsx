@@ -103,6 +103,10 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
 
       setCurrentUserPhoto(myProfile.profile_photo_url);
 
+      // IDs déjà vus dans cette session (évite de revoir les mêmes profils)
+      const seenKey = `amali_seen_${user.id}`;
+      const sessionSeen = new Set<string>(JSON.parse(sessionStorage.getItem(seenKey) || '[]'));
+
       const calculateAge = (dob: string) => {
         const today = new Date();
         const birth = new Date(dob);
@@ -141,6 +145,7 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
         }))
         .filter(profile => {
           if (likedIds.has(profile.id)) return false;
+          if (sessionSeen.has(profile.id)) return false;
           if (!profile.name) return false;
           if (profile.date_of_birth && calculateAge(profile.date_of_birth) < 18) return false;
           const theirGender = profile.gender?.toLowerCase();
@@ -205,6 +210,12 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
     // Avancer immédiatement la carte — le reste se fait en arrière-plan
     const profileSnapshot = { ...currentProfile };
     const userIdSnapshot = userId;
+
+    // Mémoriser l'ID vu dans sessionStorage pour ne pas le revoir si on revient
+    const seenKey = `amali_seen_${userIdSnapshot}`;
+    const seen = JSON.parse(sessionStorage.getItem(seenKey) || '[]');
+    seen.push(profileSnapshot.id);
+    sessionStorage.setItem(seenKey, JSON.stringify(seen));
 
     setTimeout(() => {
       setCurrentProfileIndex(prev => prev + 1);

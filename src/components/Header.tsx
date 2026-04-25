@@ -20,27 +20,13 @@ export default function Header({ showSettings = true, onSettingsClick, onNotific
     >
       <div className="px-5 py-3 flex items-center justify-between">
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center">
           <img
             src={logoAmali}
             alt="AMALI"
             className="h-10 w-auto"
             onError={(e) => { e.currentTarget.style.display = 'none'; }}
           />
-          <h1
-            className="text-3xl font-bold"
-            style={{
-              fontFamily: "'Quicksand', 'Nunito', 'Comfortaa', 'Poppins', 'Varela Round', sans-serif",
-              background: 'linear-gradient(135deg, #ec4899 0%, #f472b6 50%, #fbbf24 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-              fontWeight: '700',
-              letterSpacing: '-0.02em',
-            }}
-          >
-            amali
-          </h1>
         </div>
 
         <div className="flex items-center gap-1">

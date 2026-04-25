@@ -256,7 +256,8 @@ export default function WhoLikedMeScreen({
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-900 dark:to-slate-800">
+    <div className="flex flex-col min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-slate-900 dark:to-slate-800"
+      style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       <Header
         notificationCount={notificationCount}
         onNotificationClick={onNotificationClick ?? (() => {})}
@@ -270,7 +271,7 @@ export default function WhoLikedMeScreen({
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-4 pb-32 pt-4">
+      <div className="flex-1 overflow-y-auto px-4 pb-32 pt-24">
 
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">

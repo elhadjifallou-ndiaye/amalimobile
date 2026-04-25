@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { ArrowLeft, ArrowRight, Check, Upload, User, Heart, Sparkles, Users, MapPin, Loader2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Upload, User, Heart, Sparkles, MapPin, Loader2 } from 'lucide-react';
 import { supabase, authService } from '@/lib/supabase';
 import { trackCompleteRegistration } from '@/lib/pixel';
 import { compressImage } from '@/lib/imageUtils';
@@ -125,11 +125,6 @@ export default function ProfileCompletion({ userId, onComplete, onSkipForNow }: 
     'Oui', 'Non', 'Parfois', 'En réflexion'
   ];
 
-  const polygamyOptions = [
-    { value: 'accepte', label: "J'accepte" },
-    { value: 'refuse', label: 'Je refuse' },
-    { value: 'discuter', label: 'À discuter' }
-  ];
 
   const toggleInterest = (interest: string) => {
     setProfileData(prev => ({
@@ -566,28 +561,6 @@ export default function ProfileCompletion({ userId, onComplete, onSkipForNow }: 
               </div>
             )}
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
-                <Users className="w-4 h-4 text-slate-600 dark:text-slate-400" />
-                Position sur la polygamie (optionnel)
-              </label>
-              <div className="space-y-3">
-                {polygamyOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setProfileData({ ...profileData, polygamyStance: option.value })}
-                    className={`w-full px-4 py-3 rounded-xl border-2 font-medium transition-all text-left ${
-                      profileData.polygamyStance === option.value
-                        ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400'
-                        : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-400'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
         )}
 
