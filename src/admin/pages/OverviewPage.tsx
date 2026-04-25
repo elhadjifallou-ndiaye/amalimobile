@@ -1,11 +1,13 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabaseAdmin as supabase } from '../supabaseAdmin';
-import { Users, Heart, MessageCircle, TrendingUp, UserCheck, Activity, AlertTriangle, EyeOff, Flag, RefreshCw } from 'lucide-react';
+import { Users, Heart, MessageCircle, TrendingUp, UserCheck, Activity, AlertTriangle, EyeOff, Flag, RefreshCw, Calendar } from 'lucide-react';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   AreaChart, Area,
 } from 'recharts';
+
+type Preset = 'today' | 'week' | 'month' | 'custom';
 
 interface Stats {
   totalUsers: number;
@@ -26,6 +28,14 @@ interface Stats {
   underage: number;
   incompleteProfile: number;
   visibleInDiscovery: number;
+  // Période filtrée
+  periodUsers: number;
+  periodMatches: number;
+  periodMessages: number;
+}
+
+function toLocalISODate(d: Date) {
+  return d.toISOString().split('T')[0];
 }
 
 export default function OverviewPage() {
@@ -35,6 +45,28 @@ export default function OverviewPage() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [subEvolution, setSubEvolution] = useState<{ date: string; total: number }[]>([]);
 
+  const [preset, setPreset] = useState<Preset>('week');
+  const now = new Date();
+  const [dateFrom, setDateFrom] = useState(toLocalISODate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1))));
+  const [dateTo, setDateTo] = useState(toLocalISODate(now));
+
+  const applyPreset = useCallback((p: Preset) => {
+    const n = new Date();
+    const todayStr = toLocalISODate(n);
+    if (p === 'today') {
+      setDateFrom(todayStr);
+      setDateTo(todayStr);
+    } else if (p === 'week') {
+      const dow = n.getDay() === 0 ? 6 : n.getDay() - 1;
+      setDateFrom(toLocalISODate(new Date(n.getFullYear(), n.getMonth(), n.getDate() - dow)));
+      setDateTo(todayStr);
+    } else if (p === 'month') {
+      setDateFrom(toLocalISODate(new Date(n.getFullYear(), n.getMonth(), 1)));
+      setDateTo(todayStr);
+    }
+    setPreset(p);
+  }, []);
+
   const loadStats = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true);
 
@@ -43,6 +75,9 @@ export default function OverviewPage() {
     // Début du lundi de la semaine en cours (pas une fenêtre glissante)
     const dayOfWeek = now.getDay() === 0 ? 6 : now.getDay() - 1; // lundi = 0
     const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek).toISOString();
+
+    const periodStart = `${dateFrom}T00:00:00.000Z`;
+    const periodEnd = `${dateTo}T23:59:59.999Z`;
 
     const [
       { count: totalUsers },
@@ -76,6 +111,17 @@ export default function OverviewPage() {
       supabase.from('profiles').select('*', { count: 'exact', head: true }).or('name.is.null,name.eq.'),
       supabase.from('profiles').select('*', { count: 'exact', head: true }).is('date_of_birth', null),
       supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('profile_completed', false),
+    ]);
+
+    // Stats de la période filtrée
+    const [
+      { count: periodUsers },
+      { count: periodMatches },
+      { count: periodMessages },
+    ] = await Promise.all([
+      supabase.from('profiles').select('*', { count: 'exact', head: true }).gte('created_at', periodStart).lte('created_at', periodEnd),
+      supabase.from('matches').select('*', { count: 'exact', head: true }).gte('created_at', periodStart).lte('created_at', periodEnd),
+      supabase.from('messages').select('*', { count: 'exact', head: true }).gte('created_at', periodStart).lte('created_at', periodEnd),
     ]);
 
     // Mineurs : date_of_birth > il y a 18 ans
@@ -134,6 +180,9 @@ export default function OverviewPage() {
       underage: underage || 0,
       incompleteProfile: incompleteProfile || 0,
       visibleInDiscovery: visibleInDiscovery || 0,
+      periodUsers: periodUsers || 0,
+      periodMatches: periodMatches || 0,
+      periodMessages: periodMessages || 0,
     });
     setLastUpdated(new Date());
     setLoading(false);
@@ -144,7 +193,7 @@ export default function OverviewPage() {
     loadStats();
     const interval = setInterval(() => loadStats(), 60_000);
     return () => clearInterval(interval);
-  }, [loadStats]);
+  }, [loadStats, dateFrom, dateTo]);
 
   const cards = [
     { label: 'Profils actifs (Discovery)', value: stats?.visibleInDiscovery, icon: Activity, color: 'text-green-400', bg: 'bg-green-500/10 border-green-500/20' },
@@ -155,6 +204,8 @@ export default function OverviewPage() {
     { label: 'Messages envoyés', value: stats?.totalMessages, icon: Activity, color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
     { label: 'Inscrits cette semaine', value: stats?.newUsersWeek, icon: TrendingUp, color: 'text-teal-400', bg: 'bg-teal-500/10 border-teal-500/20' },
   ];
+
+  const presetLabel: Record<Preset, string> = { today: "Aujourd'hui", week: 'Cette semaine', month: 'Ce mois', custom: 'Personnalisé' };
 
   return (
     <div>
@@ -175,6 +226,66 @@ export default function OverviewPage() {
           <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
           Rafraîchir
         </button>
+      </div>
+
+      {/* Filtre par période */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 mb-6">
+        <div className="flex items-center gap-2 mb-3">
+          <Calendar className="w-4 h-4 text-slate-400" />
+          <span className="text-sm font-medium text-slate-300">Période d'analyse</span>
+        </div>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {(['today', 'week', 'month', 'custom'] as Preset[]).map(p => (
+            <button
+              key={p}
+              onClick={() => applyPreset(p)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                preset === p
+                  ? 'bg-rose-500 text-white'
+                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+              }`}
+            >
+              {presetLabel[p]}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-3">
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={e => { setDateFrom(e.target.value); setPreset('custom'); }}
+            className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none focus:ring-1 focus:ring-rose-500"
+          />
+          <span className="text-slate-500 text-sm">→</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={e => { setDateTo(e.target.value); setPreset('custom'); }}
+            className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none focus:ring-1 focus:ring-rose-500"
+          />
+        </div>
+      </div>
+
+      {/* Cartes période */}
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        {[
+          { label: `Inscrits (${presetLabel[preset].toLowerCase()})`, value: stats?.periodUsers, color: 'text-rose-400', bg: 'bg-rose-500/10 border-rose-500/20', icon: TrendingUp },
+          { label: `Matchs (${presetLabel[preset].toLowerCase()})`, value: stats?.periodMatches, color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20', icon: Heart },
+          { label: `Messages (${presetLabel[preset].toLowerCase()})`, value: stats?.periodMessages, color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/20', icon: MessageCircle },
+        ].map((card, i) => {
+          const Icon = card.icon;
+          return (
+            <div key={i} className={`bg-slate-900 border rounded-2xl p-4 ${card.bg}`}>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-slate-400 text-xs leading-tight">{card.label}</p>
+                <Icon className={`w-4 h-4 flex-shrink-0 ${card.color}`} />
+              </div>
+              <p className={`text-2xl font-bold ${card.color}`}>
+                {loading ? '—' : (card.value ?? 0).toLocaleString()}
+              </p>
+            </div>
+          );
+        })}
       </div>
 
       <div className="bg-gradient-to-r from-rose-500/20 to-amber-500/20 border border-rose-500/30 rounded-2xl p-5 mb-6 flex items-center gap-4">
