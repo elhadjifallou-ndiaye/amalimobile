@@ -291,10 +291,11 @@ export default function DiscoveryScreen({ onNavigateToMessages, notificationCoun
           updated_at: now,
         }).select().single();
 
+        const convId = newConversation?.id ?? null;
         if (myProfile) {
           supabase.from('notifications').insert([
-            { user_id: profileSnapshot.id, type: 'new_match', title: 'Nouveau match ! 💕', message: `Vous avez matché avec ${myProfile.name} !`, data: { from_user_id: userIdSnapshot, from_user_name: myProfile.name, from_user_photo: myProfile.profile_photo_url }, is_read: false },
-            { user_id: userIdSnapshot, type: 'new_match', title: 'Nouveau match ! 💕', message: `Vous avez matché avec ${profileSnapshot.name} !`, data: { from_user_id: profileSnapshot.id, from_user_name: profileSnapshot.name, from_user_photo: profileSnapshot.profile_photo_url }, is_read: false },
+            { user_id: profileSnapshot.id, type: 'new_match', title: 'Nouveau match ! 💕', message: `Vous avez matché avec ${myProfile.name} !`, data: { from_user_id: userIdSnapshot, from_user_name: myProfile.name, from_user_photo: myProfile.profile_photo_url, conversation_id: convId }, is_read: false },
+            { user_id: userIdSnapshot, type: 'new_match', title: 'Nouveau match ! 💕', message: `Vous avez matché avec ${profileSnapshot.name} !`, data: { from_user_id: profileSnapshot.id, from_user_name: profileSnapshot.name, from_user_photo: profileSnapshot.profile_photo_url, conversation_id: convId }, is_read: false },
           ]);
         }
 

@@ -286,33 +286,40 @@ export default function ChatScreen({ conversation, currentUserId, onBack }: Chat
         prev.map(msg => msg.id === tempMessage.id ? insertedMessage : msg)
       );
 
-      // ✅ CORRIGÉ : Mise à jour de last_message
-      const unreadColumn = conversation.user1_id === currentUserId 
-        ? 'user2_unread_count' 
+      const unreadColumn = conversation.user1_id === currentUserId
+        ? 'user2_unread_count'
         : 'user1_unread_count';
 
-      // Récupérer le compteur actuel
-      const { data: currentConv } = await supabase
-        .from('conversations')
-        .select(unreadColumn)
-        .eq('id', conversation.id)
-        .single();
+      const [{ data: currentConv }, { data: myProfile }] = await Promise.all([
+        supabase.from('conversations').select(unreadColumn).eq('id', conversation.id).single(),
+        supabase.from('profiles').select('name, profile_photo_url').eq('id', currentUserId).single(),
+      ]);
 
       const currentUnread = (currentConv?.[unreadColumn as keyof typeof currentConv] as number | undefined) || 0;
 
-      // Mettre à jour avec le nouveau compteur
-      await supabase
-        .from('conversations')
-        .update({
-          last_message: messageContent.length > 50 
-            ? messageContent.substring(0, 50) + '...' 
+      await Promise.all([
+        supabase.from('conversations').update({
+          last_message: messageContent.length > 50
+            ? messageContent.substring(0, 50) + '...'
             : messageContent,
           last_message_at: new Date().toISOString(),
           [unreadColumn]: currentUnread + 1,
-        })
-        .eq('id', conversation.id);
+        }).eq('id', conversation.id),
 
-      console.log('✅ Conversation mise à jour avec last_message:', messageContent);
+        myProfile && supabase.from('notifications').insert({
+          user_id: otherUserId,
+          type: 'new_message',
+          title: myProfile.name,
+          message: messageContent.length > 60 ? messageContent.substring(0, 60) + '…' : messageContent,
+          data: {
+            from_user_id: currentUserId,
+            from_user_name: myProfile.name,
+            from_user_photo: myProfile.profile_photo_url,
+            conversation_id: conversation.id,
+          },
+          is_read: false,
+        }),
+      ]);
 
       inputRef.current?.focus();
     } catch (error) {

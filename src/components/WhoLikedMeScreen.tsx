@@ -217,23 +217,26 @@ export default function WhoLikedMeScreen({
         .eq('id', userId)
         .single();
 
+      const convId = newConversation?.id ?? null;
       if (myProfile) {
-        await supabase.from('notifications').insert({
-          user_id: liker.id,
-          type: 'new_match',
-          title: 'Nouveau match ! 💕',
-          message: `Vous avez matché avec ${myProfile.name} !`,
-          data: { from_user_id: userId, from_user_name: myProfile.name, from_user_photo: myProfile.profile_photo_url },
-          is_read: false,
-        });
-        await supabase.from('notifications').insert({
-          user_id: userId,
-          type: 'new_match',
-          title: 'Nouveau match ! 💕',
-          message: `Vous avez matché avec ${liker.name} !`,
-          data: { from_user_id: liker.id, from_user_name: liker.name, from_user_photo: liker.photo },
-          is_read: false,
-        });
+        await supabase.from('notifications').insert([
+          {
+            user_id: liker.id,
+            type: 'new_match',
+            title: 'Nouveau match ! 💕',
+            message: `Vous avez matché avec ${myProfile.name} !`,
+            data: { from_user_id: userId, from_user_name: myProfile.name, from_user_photo: myProfile.profile_photo_url, conversation_id: convId },
+            is_read: false,
+          },
+          {
+            user_id: userId,
+            type: 'new_match',
+            title: 'Nouveau match ! 💕',
+            message: `Vous avez matché avec ${liker.name} !`,
+            data: { from_user_id: liker.id, from_user_name: liker.name, from_user_photo: liker.photo, conversation_id: convId },
+            is_read: false,
+          },
+        ]);
       }
 
       setMatchedIds(prev => new Set(prev).add(liker.id));
