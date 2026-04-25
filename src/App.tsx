@@ -268,7 +268,7 @@ function AppContent() {
 
       {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
 
-      {!showSplash && loading && (
+      {!showSplash && loading && !needsPasswordReset && (
         <div className="min-h-screen bg-gradient-to-br from-rose-50 via-white to-amber-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center">
           <div className="text-center">
             <div className="w-16 h-16 border-4 border-rose-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
