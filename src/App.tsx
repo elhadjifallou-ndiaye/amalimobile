@@ -39,6 +39,8 @@ function AppContent() {
     message: string;
     photo?: string | null;
     type: 'match' | 'like' | 'message' | 'other';
+    fromUserId?: string;
+    conversationId?: string;
   } | null>(null);
 
   const { isDarkMode } = useTheme();
@@ -132,6 +134,8 @@ function AppContent() {
         message: latest.message,
         photo: latest.data?.from_user_photo,
         type: typeMap[latest.type] ?? 'other',
+        fromUserId: latest.data?.from_user_id,
+        conversationId: latest.data?.conversation_id,
       });
     }
   }, [notifications[0]?.id]);
@@ -217,19 +221,20 @@ function AppContent() {
   const handleNotificationClick = async (n: typeof notifications[0]) => {
     markAsRead(n.id);
     setShowNotificationsPanel(false);
+
     if (n.type === 'new_match' && n.data?.from_user_id) {
-      // Trouver la conversation liée au match et naviguer vers messages
-      const currentUser = user;
-      if (currentUser) {
+      if (user) {
         const { data: conv } = await supabase
           .from('conversations')
           .select('id')
-          .or(`and(user1_id.eq.${currentUser.id},user2_id.eq.${n.data.from_user_id}),and(user1_id.eq.${n.data.from_user_id},user2_id.eq.${currentUser.id})`)
+          .or(`and(user1_id.eq.${user.id},user2_id.eq.${n.data.from_user_id}),and(user1_id.eq.${n.data.from_user_id},user2_id.eq.${user.id})`)
           .maybeSingle();
         handleNavigateToMessages(conv?.id ?? undefined);
       }
     } else if (n.type === 'new_message') {
-      setActiveScreen('messages');
+      handleNavigateToMessages(n.data?.conversation_id ?? undefined);
+    } else if (n.type === 'new_like') {
+      setActiveScreen('likes');
     } else if (
       n.type === 'system' &&
       (n.data?.action === 'community_post' || n.data?.action === 'community_comment' || n.data?.action === 'community_like')
@@ -248,10 +253,21 @@ function AppContent() {
           photo={activeToast.photo}
           type={activeToast.type}
           onClose={() => setActiveToast(null)}
-          onClick={() => {
+          onClick={async () => {
+            const toast = activeToast;
             setActiveToast(null);
-            if (activeToast.type === 'message') setActiveScreen('messages');
-            else if (activeToast.type === 'match') setShowNotificationsPanel(true);
+            if (toast.type === 'message') {
+              handleNavigateToMessages(toast.conversationId ?? undefined);
+            } else if (toast.type === 'match' && toast.fromUserId && user) {
+              const { data: conv } = await supabase
+                .from('conversations')
+                .select('id')
+                .or(`and(user1_id.eq.${user.id},user2_id.eq.${toast.fromUserId}),and(user1_id.eq.${toast.fromUserId},user2_id.eq.${user.id})`)
+                .maybeSingle();
+              handleNavigateToMessages(conv?.id ?? undefined);
+            } else if (toast.type === 'like') {
+              setActiveScreen('likes');
+            }
           }}
         />
       )}
