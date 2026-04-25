@@ -483,7 +483,7 @@ export default function ProfileScreen() {
           <MenuItem
             icon={HelpCircle}
             label="Contacter le support WhatsApp"
-            onClick={() => window.open('https://wa.me/221781000000?text=Bonjour%2C%20j%27ai%20besoin%20d%27aide%20sur%20Amali%20%F0%9F%91%8B', '_blank')}
+            onClick={() => window.open('https://wa.me/221777822971?text=Bonjour%2C%20j%27ai%20besoin%20d%27aide%20sur%20Amali%20%F0%9F%91%8B', '_blank')}
           />
           <MenuItem 
             icon={Home} 
